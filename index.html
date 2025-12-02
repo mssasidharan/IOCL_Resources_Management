@@ -4,224 +4,300 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Project Management</title>
-
-  <!-- Tailwind CDN for quick styling -->
-  <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- React + ReactDOM UMD -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-
-  <!-- Babel for in-browser JSX (prototype use only) -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- SheetJS for Excel import/export -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-
-  <!-- Chart.js for charts -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
   <style>
-    body { background: #f1f5f9; }
-    /* small scrollbar for table preview */
-    .scroll-slim::-webkit-scrollbar { height:10px; width:8px; }
-    .scroll-slim::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius:8px; }
+    :root{
+      --bg:#f1f5f9; --card:#ffffff; --accent:#0b74da;
+      --muted:#6b7280; --tile-shadow: 0 6px 14px rgba(15,23,42,0.06);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    body{margin:0;background:var(--bg);color:#0f172a}
+    .wrap{padding:28px;max-width:1200px;margin:0 auto}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    h1{margin:0;font-size:24px}
+    .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .tile{background:var(--card);border-radius:10px;padding:18px;box-shadow:var(--tile-shadow);display:flex;flex-direction:column;justify-content:space-between;min-height:110px}
+    .tile h3{margin:0;font-size:16px}
+    .tile p{margin:6px 0 0;color:var(--muted);font-size:13px}
+    .btn{display:inline-block;padding:8px 12px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;font-size:13px}
+    .page{display:none;margin-top:18px}
+    .page.active{display:block}
+    .grid-2{display:grid;grid-template-columns:1fr 360px;gap:16px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border-bottom:1px solid #eef2f7;font-size:13px}
+    .small{font-size:13px;color:var(--muted)}
+    .editor{position:fixed;inset:0;background:rgba(2,6,23,0.5);display:flex;align-items:center;justify-content:center}
+    .editor .box{background:#fff;padding:12px;border-radius:8px;width:90%;max-width:900px;max-height:80vh;overflow:auto}
+    .input{padding:8px;border:1px solid #e6edf3;border-radius:6px;width:100%}
+    .row-btn{padding:6px 10px;border-radius:6px;background:#ef4444;color:#fff;border:none}
   </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Project Management</h1>
+        <div class="small">Landing • Resource Allocation prototype</div>
+      </div>
+      <div>
+        <button id="homeBtn" class="btn" onclick="show('landing')">Home</button>
+      </div>
+    </header>
 
-  <script type="text/babel">
-    const { useState, useMemo, useEffect, useRef } = React;
+    <!-- Landing tiles -->
+    <div id="landing" class="page active">
+      <div class="tiles">
+        <div class="tile">
+          <div>
+            <h3>Project Scheduling</h3>
+            <p>Gantt chart, timelines and milestones</p>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <a href="#" class="btn" onclick="show('scheduling')">Open</a>
+            <div class="small">Quick</div>
+          </div>
+        </div>
 
-    /* ---------- Utilities ---------- */
-    function downloadFile(content, filename, mime='text/csv'){
-      const blob = new Blob([content], {type: mime});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
-      URL.revokeObjectURL(url);
+        <div class="tile">
+          <div>
+            <h3>Resource Allocation</h3>
+            <p>Assign resources, interactive planner</p>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <a href="#" class="btn" onclick="show('resource')">Open</a>
+            <div class="small">Start</div>
+          </div>
+        </div>
+
+        <div class="tile">
+          <div>
+            <h3>Dashboards</h3>
+            <p>Progress & utilization</p>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <a href="#" class="btn" onclick="show('dash')">Open</a>
+            <div class="small">View</div>
+          </div>
+        </div>
+
+        <div class="tile">
+          <div>
+            <h3>Expenses</h3>
+            <p>Costs & budgets</p>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <a href="#" class="btn" onclick="show('expenses')">Open</a>
+            <div class="small">Manage</div>
+          </div>
+        </div>
+
+        <div class="tile">
+          <div>
+            <h3>Document Tracker</h3>
+            <p>Files & reports</p>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <a href="#" class="btn" onclick="show('docs')">Open</a>
+            <div class="small">Files</div>
+          </div>
+        </div>
+
+        <div class="tile">
+          <div>
+            <h3>More</h3>
+            <p>Add modules later</p>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <a href="#" class="btn" onclick="alert('We will add more modules')">Open</a>
+            <div class="small">Soon</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simple Resource Allocation page -->
+    <div id="resource" class="page">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <h2>Resource Allocation</h2>
+          <div class="small">Upload task list (Excel later) • Edit in built spreadsheet editor</div>
+        </div>
+        <div>
+          <button class="btn" onclick="openEditor()">⋯ Edit sheet</button>
+          <button class="btn" onclick="autoAllocate()">Auto Allocate</button>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <h4 class="small">Task list</h4>
+          <div style="margin-top:8px">
+            <table id="taskTable">
+              <thead><tr><th>ID</th><th>Location</th><th>State</th><th>Type</th><th>D</th><th>Assigned</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <aside>
+          <h4 class="small">Resources (mock)</h4>
+          <div id="resourceList" style="margin-top:8px"></div>
+          <div style="margin-top:12px">
+            <button class="row-btn" onclick="exportCSV()">Export CSV</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- Dashboards (simple) -->
+    <div id="dash" class="page">
+      <h2>Dashboards</h2>
+      <p class="small">Basic resource utilization preview</p>
+      <div style="margin-top:12px">
+        <table id="utilTable"><thead><tr><th>Resource</th><th>Assigned days</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div id="scheduling" class="page"><h2>Project Scheduling</h2><p class="small">Placeholder</p></div>
+    <div id="expenses" class="page"><h2>Expenses</h2><p class="small">Placeholder</p></div>
+    <div id="docs" class="page"><h2>Document Tracker</h2><p class="small">Placeholder</p></div>
+
+  </div>
+
+  <!-- Editor modal -->
+  <div id="editor" class="editor" style="display:none">
+    <div class="box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div><strong>Spreadsheet Editor</strong> <div class="small">Add / edit rows and assign resources</div></div>
+        <div><button onclick="closeEditor()" class="row-btn">Done</button></div>
+      </div>
+
+      <div>
+        <table id="editorTable"><thead><tr><th>#</th><th>ID</th><th>Location</th><th>State</th><th>Type</th><th>D</th><th>Assigned</th><th>Delete</th></tr></thead><tbody></tbody></table>
+      </div>
+
+      <div style="margin-top:8px;">
+        <button onclick="addEditorRow()" class="btn">Add Row</button>
+        <button onclick="pasteEditor()" class="btn" style="background:#10b981">Paste</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // minimal JS logic for fallback
+    const mockResources = Array.from({length:12}).map((_,i)=>({id:'R'+(i+1),'name':'Resource '+(i+1)}));
+    let tasks = [];
+    function show(id){
+      document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+      const el = document.getElementById(id);
+      if(el) el.classList.add('active');
+      window.scrollTo(0,0);
+      if(id==='resource') renderTasks();
+      if(id==='dash') renderUtil();
     }
-    function toCSV(rows, cols){
-      const header = cols.join(',');
-      const lines = rows.map(r => cols.map(c => {
-        const v = r[c] == null ? '' : String(r[c]);
-        return `"${v.replace(/"/g,'""')}"`;
-      }).join(','));
-      return [header, ...lines].join('\\n');
+
+    function openEditor(){
+      document.getElementById('editor').style.display='flex';
+      renderEditor();
     }
-    function addDays(dateStr, days){
-      const d = new Date(dateStr);
-      d.setDate(d.getDate()+days);
-      return d.toISOString().slice(0,10);
+    function closeEditor(){
+      document.getElementById('editor').style.display='none';
+      renderTasks();
     }
-
-    /* ---------- Small mock resources (replaceable) ---------- */
-    function generateResources(n=45){
-      return Array.from({length:n}).map((_,i)=>({
-        id: `R${i+1}`, name: `Resource ${i+1}`, role: i%6===0 ? 'Trainer' : 'Field',
-        capacityDaysPerWeek: 6
-      }));
-    }
-
-    /* ---------- Greedy allocator ---------- */
-    function autoAllocate(resources, tasks, projectStart='2025-12-08'){
-      const resState = resources.map(r => ({...r, nextFreeDate: projectStart}));
-      const locs = tasks.map(t => ({...t}));
-
-      // sort: prefer trainingType 2 (long) then 3 then 1; longer durations earlier
-      locs.sort((a,b)=> (b.trainingType||0) - (a.trainingType||0) || (b.durationDays||0) - (a.durationDays||0));
-
-      for (const loc of locs){
-        resState.sort((a,b)=> new Date(a.nextFreeDate) - new Date(b.nextFreeDate));
-        const candidate = resState[0];
-        if(!candidate) break;
-        loc.assignedResourceId = candidate.id;
-        loc.plannedStart = candidate.nextFreeDate;
-        loc.plannedEnd = addDays(loc.plannedStart, (loc.durationDays||1)-1);
-        candidate.nextFreeDate = addDays(loc.plannedEnd, 1);
-      }
-      return locs;
-    }
-
-    /* ---------- SheetJS helpers ---------- */
-    function readExcelFile(file){
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const data = e.target.result;
-          const wb = XLSX.read(data, { type: 'binary' });
-          const parsed = {};
-          for (const s of wb.SheetNames){
-            const ws = wb.Sheets[s];
-            parsed[s] = XLSX.utils.sheet_to_json(ws, {defval: ''});
-          }
-          resolve({sheets: wb.SheetNames, parsed});
-        };
-        reader.onerror = reject;
-        reader.readAsBinaryString(file);
+    function renderEditor(){
+      const tbody = document.querySelector('#editorTable tbody');
+      tbody.innerHTML='';
+      tasks.forEach((t,i)=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>'+(i+1)+'</td>'
+          +'<td><input value="'+(t.id||'')+'" onchange="editorChange('+i+',0,this.value)"></td>'
+          +'<td><input value="'+(t.name||'')+'" onchange="editorChange('+i+',1,this.value)"></td>'
+          +'<td><input value="'+(t.state||'')+'" onchange="editorChange('+i+',2,this.value)"></td>'
+          +'<td><input value="'+(t.trainingType||'')+'" onchange="editorChange('+i+',3,this.value)"></td>'
+          +'<td><input value="'+(t.durationDays||1)+'" onchange="editorChange('+i+',4,this.value)"></td>'
+          +'<td>'+renderResourceSelect(t.assignedResourceId,'editor',i)+'</td>'
+          +'<td><button onclick="editorDelete('+i+')" class="row-btn">X</button></td>';
+        tbody.appendChild(tr);
       });
     }
+    function renderResourceSelect(selected, prefix, idx){
+      let html = '<select onchange="editorAssign('+idx+',this.value)"><option value="">--</option>';
+      for(const r of mockResources) html += '<option value="'+r.id+'" '+(selected===r.id? 'selected':'' )+'>'+r.id+' - '+r.name+'</option>';
+      html += '</select>';
+      return html;
+    }
+    function editorChange(i,col,val){
+      if(col===0) tasks[i].id = val;
+      if(col===1) tasks[i].name = val;
+      if(col===2) tasks[i].state = val;
+      if(col===3) tasks[i].trainingType = val;
+      if(col===4) tasks[i].durationDays = Number(val) || 1;
+    }
+    function editorAssign(i,val){ tasks[i].assignedResourceId = val||null; renderEditor(); }
+    function editorDelete(i){ tasks.splice(i,1); renderEditor(); }
+    function addEditorRow(){ tasks.push({id:'L'+(tasks.length+1),name:'Location '+(tasks.length+1),state:'',trainingType:'',durationDays:1,assignedResourceId:null}); renderEditor(); }
 
-    /* ---------- Gantt small preview ---------- */
-    function Gantt({rows}){
-      const dates = rows.flatMap(r => r.plannedStart ? [new Date(r.plannedStart), new Date(r.plannedEnd)] : []).filter(Boolean);
-      if(dates.length===0) return <div className="italic text-sm">No planned dates yet</div>;
-      const minDate = new Date(Math.min(...dates.map(d=>d.getTime())));
-      const maxDate = new Date(Math.max(...dates.map(d=>d.getTime())));
-      const days = Math.ceil((maxDate - minDate)/(1000*60*60*24)) + 1;
-      return (
-        <div className="overflow-auto border rounded p-2 bg-white">
-          <div className="text-xs mb-2">Timeline: {minDate.toISOString().slice(0,10)} → {maxDate.toISOString().slice(0,10)} ({days} days)</div>
-          <div className="space-y-1">
-            {rows.map(r=>(
-              <div key={r.id} className="flex items-center">
-                <div className="w-40 text-xs truncate">{r.name} <span className="text-gray-400">({r.assignedResourceId||'unassigned'})</span></div>
-                <div className="flex-1 h-6 relative bg-gray-50 rounded">
-                  {r.plannedStart && (
-                    <div className="absolute h-6 rounded shadow"
-                         style={{
-                           left: `${((new Date(r.plannedStart)-minDate)/(1000*60*60*24))/days*100}%`,
-                           width: `${(r.durationDays/days)*100}%`,
-                           background: 'linear-gradient(90deg,#60a5fa,#2563eb)'
-                         }}
-                         title={`${r.plannedStart} → ${r.plannedEnd} (${r.durationDays}d)`} />
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+    function pasteEditor(){
+      navigator.clipboard.readText().then(text=>{
+        if(!text) return alert('Clipboard empty');
+        const lines = text.trim().split(/\\r?\\n/).filter(Boolean);
+        for(const line of lines){
+          const cols = line.split(/\\t|,/);
+          tasks.push({id: cols[0]||('L'+(tasks.length+1)), name: cols[1]||'', state: cols[2]||'', trainingType: cols[3]||'', durationDays: Number(cols[4]||1), assignedResourceId: null});
+        }
+        renderEditor();
+      }).catch(()=>alert('Clipboard access denied. Paste manually.'));
     }
 
-    /* ---------- Editable Spreadsheet Component (simple Excel-like) ---------- */
-    function SpreadsheetEditor({columns, rows, onChange, onClose}){
-      // columns: array of column keys; rows: array of objects
-      const [localRows, setLocalRows] = useState(rows.map(r=>({...r})));
-
-      useEffect(()=> setLocalRows(rows.map(r=>({...r}))), [rows]);
-
-      function updateCell(rowIdx, col, value){
-        const next = localRows.slice();
-        next[rowIdx] = {...next[rowIdx], [col]: value};
-        setLocalRows(next);
-        onChange && onChange(next);
+    function renderTasks(){
+      const tbody = document.querySelector('#taskTable tbody');
+      tbody.innerHTML='';
+      for(const t of tasks){
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>'+ (t.id||'') +'</td><td>'+ (t.name||'') +'</td><td>'+ (t.state||'') +'</td><td>'+ (t.trainingType||'') +'</td><td>'+ (t.durationDays||'') +'</td><td>'+ (t.assignedResourceId||'') +'</td>';
+        tbody.appendChild(tr);
       }
-      function addRow(){
-        const newRow = {};
-        columns.forEach(c => newRow[c] = '');
-        setLocalRows(prev => { const n = [...prev, newRow]; onChange && onChange(n); return n; });
-      }
-      function removeRow(i){
-        const next = localRows.slice(); next.splice(i,1);
-        setLocalRows(next); onChange && onChange(next);
-      }
-      function pasteFromClipboard(e){
-        // simple paste handler: parse TSV or CSV and append rows
-        navigator.clipboard.readText().then(text => {
-          if(!text) return;
-          const lines = text.trim().split(/\\r?\\n/);
-          const parsed = lines.map(line => line.split(/\\t|,/));
-          const newRows = parsed.map(arr => {
-            const obj = {};
-            for(let i=0;i<columns.length;i++) obj[columns[i]] = arr[i] || '';
-            return obj;
-          });
-          setLocalRows(prev => { const n = [...prev, ...newRows]; onChange && onChange(n); return n; });
-        });
-      }
-
-      return (
-        <div className="fixed inset-0 z-50 bg-black/30 flex items-start justify-center p-6">
-          <div className="bg-white rounded shadow-lg w-full max-w-6xl max-h-[90vh] overflow-auto">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div className="font-medium">Spreadsheet Editor</div>
-              <div className="flex items-center gap-2">
-                <button className="px-3 py-1 text-xs bg-gray-100 rounded" onClick={addRow}>Add row</button>
-                <button className="px-3 py-1 text-xs bg-gray-100 rounded" onClick={pasteFromClipboard}>Paste</button>
-                <button className="px-3 py-1 text-xs bg-rose-500 text-white rounded" onClick={onClose}>Done</button>
-              </div>
-            </div>
-
-            <div className="p-4">
-              <div className="overflow-auto border rounded">
-                <table className="min-w-full text-xs">
-                  <thead className="bg-slate-50 sticky top-0">
-                    <tr>
-                      <th className="p-2">#</th>
-                      {columns.map(c=> <th key={c} className="p-2 text-left">{c}</th>)}
-                      <th className="p-2">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {localRows.map((r,ri)=>(
-                      <tr key={ri} className="border-t">
-                        <td className="p-1 text-xs">{ri+1}</td>
-                        {columns.map(col=>(
-                          <td key={col} className="p-1">
-                            <input className="w-full p-1 text-xs border rounded" value={r[col]||''} onChange={e=>updateCell(ri,col,e.target.value)} />
-                          </td>
-                        ))}
-                        <td className="p-1">
-                          <button className="text-xs text-rose-600" onClick={()=>removeRow(ri)}>Delete</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="mt-3 text-xs text-slate-500">Tip: paste rows from Excel (copy from Excel, click Paste) or type directly.</div>
-            </div>
-          </div>
-        </div>
-      );
+      const resDiv = document.getElementById('resourceList');
+      resDiv.innerHTML = mockResources.map(r=>'<div class="small">'+r.id+' — '+r.name+'</div>').join('');
     }
 
-    /* ---------- Main Single-file SPA ---------- */
-    function App(){
-      const [page, setPage] = useState('landing'); // landing, resourceAllocation, scheduling (placeholder), dashboards, expenses, docs
-      const [showEditor, setShowEditor] = useState(false);
+    function autoAllocate(){
+      // naive round-robin assign
+      for(let i=0;i<tasks.length;i++){
+        tasks[i].assignedResourceId = mockResources[i % mockResources.length].id;
+      }
+      renderTasks();
+      alert('Auto-allocated (round-robin) to mock resources. Use editor to fine tune.');
+    }
 
-      // resources & tasks stored in state; resources can be uploaded later
-      const [resources, setResources] = useState(() =>
+    function exportCSV(){
+      if(tasks.length===0) return alert('No tasks to export');
+      const cols = ['id','name','state','trainingType','durationDays','assignedResourceId'];
+      const csv = [cols.join(',')].concat(tasks.map(t=>cols.map(c=>'"'+(t[c]||'')+'"').join(','))).join('\\n');
+      const blob = new Blob([csv], {type:'text/csv'}), url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='allocations.csv'; a.click(); URL.revokeObjectURL(url);
+    }
+
+    function renderUtil(){
+      const tbody = document.querySelector('#utilTable tbody');
+      tbody.innerHTML = '';
+      // compute assigned days per resource
+      const map = {};
+      for(const r of mockResources) map[r.id]=0;
+      for(const t of tasks) if(t.assignedResourceId) map[t.assignedResourceId] += (t.durationDays||1);
+      for(const r of mockResources){
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>'+r.id+' - '+r.name+'</td><td>'+ (map[r.id]||0) +'</td>';
+        tbody.appendChild(tr);
+      }
+    }
+
+    // initial sample tasks
+    tasks = [
+      {id:'L1',name:'Location 1',state:'TN',trainingType:2,durationDays:6,assignedResourceId:null},
+      {id:'L2',name:'Location 2',state:'TN',trainingType:2,durationDays:1,assignedResourceId:null},
+      {id:'L3',name:'Location 3',state:'MH',trainingType:3,durationDays:2,assignedResourceId:null},
+    ];
+    renderTasks();
+  </script>
+</body>
+</html>
