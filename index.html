@@ -26,9 +26,17 @@
     th,td{padding:8px;border-bottom:1px solid #eef2f7;font-size:13px}
     .small{font-size:13px;color:var(--muted)}
     .editor{position:fixed;inset:0;background:rgba(2,6,23,0.5);display:flex;align-items:center;justify-content:center}
-    .editor .box{background:#fff;padding:12px;border-radius:8px;width:90%;max-width:900px;max-height:80vh;overflow:auto}
+    .editor .box{background:#fff;padding:12px;border-radius:8px;width:95%;max-width:1100px;max-height:88vh;overflow:auto}
     .input{padding:8px;border:1px solid #e6edf3;border-radius:6px;width:100%}
     .row-btn{padding:6px 10px;border-radius:6px;background:#ef4444;color:#fff;border:none}
+    .muted{color:var(--muted);font-size:13px}
+    .cols-ui{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+    .col-pill{background:#eef2ff;padding:6px 8px;border-radius:8px;font-size:13px}
+    .control-row{display:flex;gap:8px;align-items:center}
+    input[type="text"]{padding:6px;border:1px solid #e6edf3;border-radius:6px}
+    .resources-list{max-height:220px;overflow:auto;border:1px solid #eef2f7;padding:8px;border-radius:6px}
+    .resource-row{display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px dashed #f1f5f9}
+    .help{font-size:12px;color:#6b7280}
   </style>
 </head>
 <body>
@@ -119,10 +127,11 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div>
           <h2>Resource Allocation</h2>
-          <div class="small">Upload task list (Excel later) • Edit in built spreadsheet editor</div>
+          <div class="small">Upload task list (Excel later) • Edit in the built spreadsheet editor</div>
         </div>
         <div>
           <button class="btn" onclick="openEditor()">⋯ Edit sheet</button>
+          <button class="btn" onclick="openResourcesEditor()">⚙ Manage resources</button>
           <button class="btn" onclick="autoAllocate()">Auto Allocate</button>
         </div>
       </div>
@@ -130,19 +139,26 @@
       <div class="grid-2">
         <div>
           <h4 class="small">Task list</h4>
+          <div class="help" style="margin-top:4px">Use the editor to add/remove/rename columns or paste rows from Excel. Assign resources using the editor or auto-allocate.</div>
           <div style="margin-top:8px">
             <table id="taskTable">
-              <thead><tr><th>ID</th><th>Location</th><th>State</th><th>Type</th><th>D</th><th>Assigned</th></tr></thead>
-              <tbody></tbody>
+              <thead><tr id="taskHeadRow"></tr></thead>
+              <tbody id="taskBody"></tbody>
             </table>
           </div>
         </div>
 
         <aside>
-          <h4 class="small">Resources (mock)</h4>
-          <div id="resourceList" style="margin-top:8px"></div>
+          <h4 class="small">Resources</h4>
+          <div class="muted" style="margin-top:6px">Edit or add resources below — changes reflect immediately.</div>
+          <div class="resources-list" id="resourceList"></div>
+
           <div style="margin-top:12px">
-            <button class="row-btn" onclick="exportCSV()">Export CSV</button>
+            <input id="newResName" placeholder="Resource name (e.g. Ravi)" style="width:100%;padding:8px;border:1px solid #e6edf3;border-radius:6px;margin-bottom:6px"/>
+            <div style="display:flex;gap:8px">
+              <button class="btn" onclick="addResource()">Add Resource</button>
+              <button class="btn" onclick="exportCSV()">Export CSV</button>
+            </div>
           </div>
         </aside>
       </div>
@@ -150,7 +166,10 @@
 
     <!-- Dashboards (simple) -->
     <div id="dash" class="page">
-      <h2>Dashboards</h2>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <h2>Dashboards</h2>
+        <button class="btn" onclick="show('landing')">Back</button>
+      </div>
       <p class="small">Basic resource utilization preview</p>
       <div style="margin-top:12px">
         <table id="utilTable"><thead><tr><th>Resource</th><th>Assigned days</th></tr></thead><tbody></tbody></table>
@@ -167,25 +186,86 @@
   <div id="editor" class="editor" style="display:none">
     <div class="box">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div><strong>Spreadsheet Editor</strong> <div class="small">Add / edit rows and assign resources</div></div>
-        <div><button onclick="closeEditor()" class="row-btn">Done</button></div>
+        <div>
+          <strong>Spreadsheet Editor</strong>
+          <div class="small">You can rename, add, remove columns. Paste rows from Excel (copy → click Paste). Edits update the main task table immediately.</div>
+        </div>
+        <div>
+          <button onclick="closeEditor()" class="row-btn">Done</button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:8px">
+        <div class="control-row">
+          <input id="newColName" placeholder="New column name" type="text"/>
+          <button class="btn" onclick="addColumn()">Add column</button>
+          <button class="btn" onclick="pasteEditor()">Paste rows</button>
+          <button class="btn" onclick="resetColumns()">Reset columns</button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:10px">
+        <div class="cols-ui" id="colsUI"></div>
       </div>
 
       <div>
-        <table id="editorTable"><thead><tr><th>#</th><th>ID</th><th>Location</th><th>State</th><th>Type</th><th>D</th><th>Assigned</th><th>Delete</th></tr></thead><tbody></tbody></table>
+        <table id="editorTable"><thead><tr id="editorHead"></tr></thead><tbody id="editorBody"></tbody></table>
       </div>
 
       <div style="margin-top:8px;">
         <button onclick="addEditorRow()" class="btn">Add Row</button>
-        <button onclick="pasteEditor()" class="btn" style="background:#10b981">Paste</button>
+        <button onclick="downloadTasksCSV()" class="btn" style="background:#10b981">Download CSV</button>
       </div>
     </div>
   </div>
 
+  <!-- Resources Editor modal -->
+  <div id="resEditor" class="editor" style="display:none">
+    <div class="box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <strong>Resources Editor</strong>
+          <div class="small">Add, edit or remove resources here. Changes apply instantly.</div>
+        </div>
+        <div><button onclick="closeResEditor()" class="row-btn">Done</button></div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="resNameInput" placeholder="Name (e.g. Ravi Kumar)" type="text" style="flex:1;padding:8px;border:1px solid #e6edf3;border-radius:6px"/>
+        <input id="resRoleInput" placeholder="Role (Trainer/Field)" type="text" style="width:160px;padding:8px;border:1px solid #e6edf3;border-radius:6px"/>
+        <button class="btn" onclick="confirmAddResource()">Add</button>
+      </div>
+
+      <div id="resListInner" style="max-height:50vh;overflow:auto;border:1px solid #eef2f7;padding:8px;border-radius:6px"></div>
+    </div>
+  </div>
+
   <script>
-    // minimal JS logic for fallback
-    const mockResources = Array.from({length:12}).map((_,i)=>({id:'R'+(i+1),'name':'Resource '+(i+1)}));
-    let tasks = [];
+    // Data
+    let resources = [
+      {id:'R1', name:'Resource 1', role:'Field', capacityDaysPerWeek:6},
+      {id:'R2', name:'Resource 2', role:'Field', capacityDaysPerWeek:6},
+      {id:'R3', name:'Resource 3', role:'Trainer', capacityDaysPerWeek:6},
+      {id:'R4', name:'Resource 4', role:'Field', capacityDaysPerWeek:6},
+      {id:'R5', name:'Resource 5', role:'Field', capacityDaysPerWeek:6},
+      {id:'R6', name:'Resource 6', role:'Field', capacityDaysPerWeek:6},
+      {id:'R7', name:'Resource 7', role:'Field', capacityDaysPerWeek:6},
+      {id:'R8', name:'Resource 8', role:'Field', capacityDaysPerWeek:6},
+      {id:'R9', name:'Resource 9', role:'Field', capacityDaysPerWeek:6},
+      {id:'R10', name:'Resource 10', role:'Field', capacityDaysPerWeek:6},
+      {id:'R11', name:'Resource 11', role:'Field', capacityDaysPerWeek:6},
+      {id:'R12', name:'Resource 12', role:'Field', capacityDaysPerWeek:6}
+    ];
+
+    // Default columns and tasks
+    let columns = ['id','name','state','trainingType','durationDays','assignedResourceId'];
+    let tasks = [
+      {id:'L1', name:'Location 1', state:'TN', trainingType:2, durationDays:6, assignedResourceId:''},
+      {id:'L2', name:'Location 2', state:'TN', trainingType:2, durationDays:1, assignedResourceId:''},
+      {id:'L3', name:'Location 3', state:'MH', trainingType:3, durationDays:2, assignedResourceId:''}
+    ];
+
+    // UI helpers
     function show(id){
       document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
       const el = document.getElementById(id);
@@ -195,109 +275,367 @@
       if(id==='dash') renderUtil();
     }
 
-    function openEditor(){
+    // Task table render
+    function renderTasks(){
+      const headRow = document.getElementById('taskHeadRow');
+      headRow.innerHTML = '';
+      columns.forEach(c => {
+        const th = document.createElement('th'); th.textContent = c; headRow.appendChild(th);
+      });
+      const thAssigned = document.createElement('th'); thAssigned.textContent = 'Actions'; headRow.appendChild(thAssigned);
+
+      const tbody = document.getElementById('taskBody');
+      tbody.innerHTML = '';
+      tasks.forEach((t, idx) => {
+        const tr = document.createElement('tr');
+        columns.forEach(col => {
+          const td = document.createElement('td');
+          let v = t[col] !== undefined ? t[col] : '';
+          td.textContent = v;
+          tr.appendChild(td);
+        });
+        // actions: edit row → open editor and scroll to row
+        const tdAct = document.createElement('td');
+        const editBtn = document.createElement('button'); editBtn.textContent='Edit'; editBtn.className='btn'; editBtn.onclick = ()=>{ openEditor(true, idx); };
+        tdAct.appendChild(editBtn);
+        tr.appendChild(tdAct);
+        tbody.appendChild(tr);
+      });
+
+      renderResourceList();
+    }
+
+    // Resource list render
+    function renderResourceList(){
+      const div = document.getElementById('resourceList');
+      div.innerHTML = '';
+      resources.forEach(r => {
+        const d = document.createElement('div');
+        d.className = 'resource-row';
+        const left = document.createElement('div'); left.innerHTML = '<strong>'+r.id+'</strong> — '+r.name+' <span class="muted">('+r.role+')</span>';
+        const right = document.createElement('div');
+        const edit = document.createElement('button'); edit.textContent='Edit'; edit.onclick = ()=>editResource(r.id);
+        const del = document.createElement('button'); del.textContent='Del'; del.onclick = ()=>removeResource(r.id);
+        edit.style.marginRight='6px';
+        right.appendChild(edit); right.appendChild(del);
+        d.appendChild(left); d.appendChild(right);
+        div.appendChild(d);
+      });
+    }
+
+    function addResource(){
+      const name = document.getElementById('newResName').value.trim();
+      if(!name) return alert('Enter resource name');
+      const id = 'R'+(resources.length+1);
+      resources.push({id, name, role:'Field', capacityDaysPerWeek:6});
+      document.getElementById('newResName').value='';
+      renderResourceList();
+      renderTasks();
+    }
+    function editResource(id){
+      // open resources editor and prefill
+      openResourcesEditor();
+      setTimeout(()=> {
+        const inputs = document.querySelectorAll('.res-edit-row');
+        inputs.forEach(inp=> { if(inp.dataset.id===id) inp.querySelector('.res-name').focus(); });
+      },200);
+    }
+    function removeResource(id){
+      if(!confirm('Remove resource '+id+'?')) return;
+      resources = resources.filter(r=> r.id !== id);
+      // also clear assignedResourceId in tasks
+      tasks = tasks.map(t => ({...t, assignedResourceId: t.assignedResourceId === id ? '' : t.assignedResourceId}));
+      // reindex ids to maintain uniqueness? We'll keep original ids — user can manage
+      renderResourceList();
+      renderTasks();
+    }
+
+    // Spreadsheet editor logic
+    let editorOpen = false;
+    let editorRowToEdit = null; // if editing a single row
+    function openEditor(editSingle=false, rowIndex=0){
+      editorOpen = true;
       document.getElementById('editor').style.display='flex';
-      renderEditor();
+      buildColsUI();
+      buildEditorTable(editSingle, rowIndex);
     }
     function closeEditor(){
+      editorOpen = false;
       document.getElementById('editor').style.display='none';
       renderTasks();
     }
-    function renderEditor(){
-      const tbody = document.querySelector('#editorTable tbody');
-      tbody.innerHTML='';
-      tasks.forEach((t,i)=>{
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td>'+(i+1)+'</td>'
-          +'<td><input value="'+(t.id||'')+'" onchange="editorChange('+i+',0,this.value)"></td>'
-          +'<td><input value="'+(t.name||'')+'" onchange="editorChange('+i+',1,this.value)"></td>'
-          +'<td><input value="'+(t.state||'')+'" onchange="editorChange('+i+',2,this.value)"></td>'
-          +'<td><input value="'+(t.trainingType||'')+'" onchange="editorChange('+i+',3,this.value)"></td>'
-          +'<td><input value="'+(t.durationDays||1)+'" onchange="editorChange('+i+',4,this.value)"></td>'
-          +'<td>'+renderResourceSelect(t.assignedResourceId,'editor',i)+'</td>'
-          +'<td><button onclick="editorDelete('+i+')" class="row-btn">X</button></td>';
-        tbody.appendChild(tr);
+
+    function buildColsUI(){
+      const ui = document.getElementById('colsUI');
+      ui.innerHTML = '';
+      columns.forEach((c, idx) => {
+        const pill = document.createElement('div'); pill.className='col-pill';
+        pill.innerHTML = '<strong>'+c+'</strong> &nbsp; <button onclick="renameColumn(' + idx + ')">Rename</button> <button onclick="removeColumn(' + idx + ')">Remove</button> <button onclick="moveColumnLeft(' + idx + ')">&larr;</button> <button onclick="moveColumnRight(' + idx + ')">&rarr;</button>';
+        ui.appendChild(pill);
       });
     }
-    function renderResourceSelect(selected, prefix, idx){
-      let html = '<select onchange="editorAssign('+idx+',this.value)"><option value="">--</option>';
-      for(const r of mockResources) html += '<option value="'+r.id+'" '+(selected===r.id? 'selected':'' )+'>'+r.id+' - '+r.name+'</option>';
-      html += '</select>';
-      return html;
-    }
-    function editorChange(i,col,val){
-      if(col===0) tasks[i].id = val;
-      if(col===1) tasks[i].name = val;
-      if(col===2) tasks[i].state = val;
-      if(col===3) tasks[i].trainingType = val;
-      if(col===4) tasks[i].durationDays = Number(val) || 1;
-    }
-    function editorAssign(i,val){ tasks[i].assignedResourceId = val||null; renderEditor(); }
-    function editorDelete(i){ tasks.splice(i,1); renderEditor(); }
-    function addEditorRow(){ tasks.push({id:'L'+(tasks.length+1),name:'Location '+(tasks.length+1),state:'',trainingType:'',durationDays:1,assignedResourceId:null}); renderEditor(); }
 
-    function pasteEditor(){
-      navigator.clipboard.readText().then(text=>{
-        if(!text) return alert('Clipboard empty');
-        const lines = text.trim().split(/\\r?\\n/).filter(Boolean);
-        for(const line of lines){
-          const cols = line.split(/\\t|,/);
-          tasks.push({id: cols[0]||('L'+(tasks.length+1)), name: cols[1]||'', state: cols[2]||'', trainingType: cols[3]||'', durationDays: Number(cols[4]||1), assignedResourceId: null});
-        }
-        renderEditor();
-      }).catch(()=>alert('Clipboard access denied. Paste manually.'));
+    function addColumn(){
+      const name = document.getElementById('newColName').value.trim();
+      if(!name) return alert('Enter a column name');
+      columns.push(name);
+      // add empty field in each task
+      tasks = tasks.map(t => ({...t, [name]: ''}));
+      document.getElementById('newColName').value='';
+      buildColsUI();
+      buildEditorTable();
+      renderTasks();
     }
 
-    function renderTasks(){
-      const tbody = document.querySelector('#taskTable tbody');
-      tbody.innerHTML='';
-      for(const t of tasks){
+    function removeColumn(idx){
+      if(!confirm('Remove column "'+columns[idx]+'"?')) return;
+      const col = columns[idx];
+      columns.splice(idx,1);
+      tasks = tasks.map(t => { const nt = {...t}; delete nt[col]; return nt; });
+      buildColsUI();
+      buildEditorTable();
+      renderTasks();
+    }
+
+    function renameColumn(idx){
+      const newName = prompt('Rename column "'+columns[idx]+'" to:', columns[idx]);
+      if(!newName) return;
+      const old = columns[idx];
+      columns[idx] = newName;
+      tasks = tasks.map(t => { const nt = {...t}; nt[newName] = nt[old]; delete nt[old]; return nt; });
+      buildColsUI();
+      buildEditorTable();
+      renderTasks();
+    }
+
+    function moveColumnLeft(idx){
+      if(idx===0) return;
+      const a = columns[idx-1]; columns[idx-1]=columns[idx]; columns[idx]=a;
+      buildColsUI(); buildEditorTable(); renderTasks();
+    }
+    function moveColumnRight(idx){
+      if(idx===columns.length-1) return;
+      const a = columns[idx+1]; columns[idx+1]=columns[idx]; columns[idx]=a;
+      buildColsUI(); buildEditorTable(); renderTasks();
+    }
+
+    function resetColumns(){
+      if(!confirm('Reset to default columns?')) return;
+      columns = ['id','name','state','trainingType','durationDays','assignedResourceId'];
+      // ensure tasks have those columns
+      tasks = tasks.map((t,i)=>({
+        id: t.id || 'L'+(i+1),
+        name: t.name || '',
+        state: t.state || '',
+        trainingType: t.trainingType || '',
+        durationDays: t.durationDays || 1,
+        assignedResourceId: t.assignedResourceId || ''
+      }));
+      buildColsUI(); buildEditorTable(); renderTasks();
+    }
+
+    function buildEditorTable(single=false, rowIndex=0){
+      const head = document.getElementById('editorHead');
+      const body = document.getElementById('editorBody');
+      head.innerHTML = '';
+      body.innerHTML = '';
+
+      // headers
+      const thIdx = document.createElement('th'); thIdx.textContent='#'; head.appendChild(thIdx);
+      columns.forEach(c=> { const th = document.createElement('th'); th.textContent = c; head.appendChild(th); });
+      const thActions = document.createElement('th'); thActions.textContent='Actions'; head.appendChild(thActions);
+
+      // rows
+      const rows = single ? [tasks[rowIndex]] : tasks;
+      rows.forEach((r, ri) => {
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td>'+ (t.id||'') +'</td><td>'+ (t.name||'') +'</td><td>'+ (t.state||'') +'</td><td>'+ (t.trainingType||'') +'</td><td>'+ (t.durationDays||'') +'</td><td>'+ (t.assignedResourceId||'') +'</td>';
-        tbody.appendChild(tr);
-      }
-      const resDiv = document.getElementById('resourceList');
-      resDiv.innerHTML = mockResources.map(r=>'<div class="small">'+r.id+' — '+r.name+'</div>').join('');
+        const idxTd = document.createElement('td'); idxTd.textContent = (single ? rowIndex+1 : ri+1); tr.appendChild(idxTd);
+        columns.forEach(col => {
+          const td = document.createElement('td');
+          const val = r[col] !== undefined ? r[col] : '';
+          const input = document.createElement('input'); input.type='text'; input.value = val;
+          input.style.width='100%';
+          input.onchange = (e) => {
+            if(single) tasks[rowIndex][col] = e.target.value;
+            else tasks[ri][col] = e.target.value;
+            renderTasks();
+          };
+          td.appendChild(input);
+          tr.appendChild(td);
+        });
+        const actTd = document.createElement('td');
+        const del = document.createElement('button'); del.textContent='Delete'; del.className='row-btn';
+        del.onclick = () => {
+          const idxToDel = single ? rowIndex : ri;
+          if(!confirm('Delete row '+(idxToDel+1)+'?')) return;
+          tasks.splice(idxToDel,1);
+          buildEditorTable();
+          renderTasks();
+        };
+        actTd.appendChild(del);
+        tr.appendChild(actTd);
+        body.appendChild(tr);
+      });
     }
 
+    function addEditorRow(){
+      const newRow = {};
+      columns.forEach(c=> newRow[c]='');
+      // set defaults for main expected columns if present
+      if(newRow.id==='') newRow.id = 'L'+(tasks.length+1);
+      if(newRow.durationDays==='') newRow.durationDays = 1;
+      tasks.push(newRow);
+      buildEditorTable();
+      renderTasks();
+    }
+
+    // Paste rows from clipboard (TSV or CSV)
+    function pasteEditor(){
+      navigator.clipboard.readText().then(text => {
+        if(!text) return alert('Clipboard empty');
+        const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+        for(const ln of lines){
+          // simple split: tab or comma
+          const cols = ln.split(/\t|,/);
+          const row = {};
+          for(let i=0;i<columns.length;i++) row[columns[i]] = cols[i] !== undefined ? cols[i] : '';
+          // fill sensible defaults
+          if(!row.id) row.id = 'L'+(tasks.length+1);
+          if(row.durationDays==='') row.durationDays = 1;
+          tasks.push(row);
+        }
+        buildEditorTable();
+        renderTasks();
+      }).catch(()=> alert('Paste not allowed — copy first or type rows manually.'));
+    }
+
+    // Download tasks CSV
+    function downloadTasksCSV(){
+      if(tasks.length===0) return alert('No tasks');
+      const header = columns.join(',');
+      const lines = tasks.map(t => columns.map(c => '"' + (t[c] !== undefined ? String(t[c]).replace(/"/g,'""') : '') + '"').join(','));
+      const csv = [header].concat(lines).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'tasks.csv'; a.click(); URL.revokeObjectURL(url);
+    }
+
+    // Auto allocate (simple round-robin but using duration)
     function autoAllocate(){
-      // naive round-robin assign
-      for(let i=0;i<tasks.length;i++){
-        tasks[i].assignedResourceId = mockResources[i % mockResources.length].id;
+      if(resources.length===0) return alert('No resources available. Add resources first.');
+      // naive greedy: assign by earliest "nextFree" - track nextFree as numeric days counter
+      const resState = resources.map((r,i)=> ({...r, nextFree:0}));
+      // sort tasks by trainingType desc and duration desc
+      const sortedIdx = tasks.map((t,i)=>i).sort((a,b)=>{
+        const ta = Number(tasks[a].trainingType||0), tb = Number(tasks[b].trainingType||0);
+        if(ta !== tb) return tb - ta;
+        return (Number(tasks[b].durationDays||0) - Number(tasks[a].durationDays||0));
+      });
+      for(const idx of sortedIdx){
+        // pick res with smallest nextFree
+        resState.sort((x,y)=> x.nextFree - y.nextFree);
+        const r = resState[0];
+        tasks[idx].assignedResourceId = r.id;
+        // set simple plannedStart/plannedEnd using pseudo-days as offsets (we'll not show dates here)
+        r.nextFree += Number(tasks[idx].durationDays || 1);
       }
       renderTasks();
-      alert('Auto-allocated (round-robin) to mock resources. Use editor to fine tune.');
+      alert('Auto allocation complete (naive). Use editor to fine-tune assignments.');
     }
 
     function exportCSV(){
       if(tasks.length===0) return alert('No tasks to export');
-      const cols = ['id','name','state','trainingType','durationDays','assignedResourceId'];
-      const csv = [cols.join(',')].concat(tasks.map(t=>cols.map(c=>'"'+(t[c]||'')+'"').join(','))).join('\\n');
-      const blob = new Blob([csv], {type:'text/csv'}), url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href=url; a.download='allocations.csv'; a.click(); URL.revokeObjectURL(url);
+      const header = columns.join(',');
+      const lines = tasks.map(t => columns.map(c => '"' + (t[c] !== undefined ? String(t[c]).replace(/"/g,'""') : '') + '"').join(','));
+      const csv = [header].concat(lines).join('\n');
+      const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'allocations.csv'; a.click(); URL.revokeObjectURL(url);
     }
 
+    // Editor helpers for per-row edit (from task table)
+    function openEditorForRow(i){
+      openEditor(true, i);
+    }
+
+    // Resources Editor
+    function openResourcesEditor(){
+      document.getElementById('resEditor').style.display='flex';
+      buildResourcesInner();
+    }
+    function closeResEditor(){
+      document.getElementById('resEditor').style.display='none';
+      renderResourceList();
+    }
+    function confirmAddResource(){
+      const name = document.getElementById('resNameInput').value.trim();
+      const role = document.getElementById('resRoleInput').value.trim() || 'Field';
+      if(!name) return alert('Enter name');
+      // generate new ID
+      let max = 0;
+      resources.forEach(r=>{
+        const m = Number(r.id.replace(/[^\d]/g,'')); if(!isNaN(m)) max = Math.max(max, m);
+      });
+      const id = 'R'+(max+1);
+      resources.push({id, name, role, capacityDaysPerWeek:6});
+      document.getElementById('resNameInput').value=''; document.getElementById('resRoleInput').value='';
+      buildResourcesInner(); renderResourceList();
+    }
+    function buildResourcesInner(){
+      const container = document.getElementById('resListInner');
+      container.innerHTML = '';
+      resources.forEach((r, idx) => {
+        const row = document.createElement('div'); row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center'; row.style.padding='6px 4px';
+        const left = document.createElement('div'); left.style.flex='1';
+        left.innerHTML = '<input class="res-edit-row" data-id="'+r.id+'" style="width:100%;padding:6px;border:1px solid #eef2f7;border-radius:6px" value="'+r.name+'" oninput="resEditName('+idx+', this.value)"><div class="muted" style="font-size:12px">ID: '+r.id+' • Role: <input value="'+r.role+'" style="width:90px" oninput="resEditRole('+idx+', this.value)"></div>';
+        const right = document.createElement('div');
+        const del = document.createElement('button'); del.textContent='Delete'; del.className='row-btn'; del.onclick = ()=>{ if(confirm('Delete '+r.id+'?')) { resources.splice(idx,1); buildResourcesInner(); renderResourceList(); renderTasks(); } };
+        right.appendChild(del);
+        row.appendChild(left); row.appendChild(right);
+        container.appendChild(row);
+      });
+    }
+    function resEditName(idx, val){ resources[idx].name = val; renderResourceList(); }
+    function resEditRole(idx, val){ resources[idx].role = val; renderResourceList(); }
+
+    // Utilization page
     function renderUtil(){
       const tbody = document.querySelector('#utilTable tbody');
       tbody.innerHTML = '';
-      // compute assigned days per resource
       const map = {};
-      for(const r of mockResources) map[r.id]=0;
-      for(const t of tasks) if(t.assignedResourceId) map[t.assignedResourceId] += (t.durationDays||1);
-      for(const r of mockResources){
+      resources.forEach(r=> map[r.id]=0);
+      tasks.forEach(t=> { if(t.assignedResourceId) map[t.assignedResourceId] += Number(t.durationDays || 0); });
+      resources.forEach(r=> {
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td>'+r.id+' - '+r.name+'</td><td>'+ (map[r.id]||0) +'</td>';
+        tr.innerHTML = '<td>'+r.id+' — '+r.name+'</td><td>'+(map[r.id]||0)+'</td>';
         tbody.appendChild(tr);
-      }
+      });
     }
 
-    // initial sample tasks
-    tasks = [
-      {id:'L1',name:'Location 1',state:'TN',trainingType:2,durationDays:6,assignedResourceId:null},
-      {id:'L2',name:'Location 2',state:'TN',trainingType:2,durationDays:1,assignedResourceId:null},
-      {id:'L3',name:'Location 3',state:'MH',trainingType:3,durationDays:2,assignedResourceId:null},
-    ];
+    // Initialize
     renderTasks();
+
+    // Expose some functions to global for inline handlers where needed
+    window.show = show;
+    window.openEditor = openEditor;
+    window.closeEditor = closeEditor;
+    window.addEditorRow = addEditorRow;
+    window.pasteEditor = pasteEditor;
+    window.addColumn = addColumn;
+    window.removeColumn = removeColumn;
+    window.renameColumn = renameColumn;
+    window.resetColumns = resetColumns;
+    window.moveColumnLeft = moveColumnLeft;
+    window.moveColumnRight = moveColumnRight;
+    window.downloadTasksCSV = downloadTasksCSV;
+    window.openResourcesEditor = openResourcesEditor;
+    window.closeResEditor = closeResEditor;
+    window.confirmAddResource = confirmAddResource;
+    window.renderTasks = renderTasks;
+    window.addResource = addResource;
+    window.editResource = editResource;
+    window.removeResource = removeResource;
+    window.exportCSV = exportCSV;
+    window.autoAllocate = autoAllocate;
+    window.renderUtil = renderUtil;
   </script>
 </body>
 </html>
