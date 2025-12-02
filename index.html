@@ -3,26 +3,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Resource Management</title>
+  <title>Project Management</title>
 
-  <!-- Tailwind Play CDN (fast prototype styling) -->
+  <!-- Tailwind CDN for quick styling -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- React + ReactDOM UMD -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 
-  <!-- Babel for in-browser JSX transpile (fine for prototype / GitHub Pages demo) -->
+  <!-- Babel for in-browser JSX (prototype use only) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- SheetJS for parsing Excel client-side -->
+  <!-- SheetJS for Excel import/export -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-  <!-- Chart.js for dashboard charts -->
+  <!-- Chart.js for charts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    body { background: #f8fafc; }
+    body { background: #f1f5f9; }
+    /* small scrollbar for table preview */
+    .scroll-slim::-webkit-scrollbar { height:10px; width:8px; }
+    .scroll-slim::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius:8px; }
   </style>
 </head>
 <body>
@@ -32,107 +35,96 @@
     const { useState, useMemo, useEffect, useRef } = React;
 
     /* ---------- Utilities ---------- */
-    function formatDate(d) {
-      if (!d) return '';
-      if (typeof d === 'string') return d;
-      return d.toISOString().slice(0,10);
-    }
-    function addDays(dateStr, days){
-      const d = new Date(dateStr);
-      d.setDate(d.getDate()+days);
-      return formatDate(d);
-    }
     function downloadFile(content, filename, mime='text/csv'){
       const blob = new Blob([content], {type: mime});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
       URL.revokeObjectURL(url);
     }
-    function toCSV(rows, columns){
-      const header = columns.join(',');
-      const lines = rows.map(r => columns.map(c => {
+    function toCSV(rows, cols){
+      const header = cols.join(',');
+      const lines = rows.map(r => cols.map(c => {
         const v = r[c] == null ? '' : String(r[c]);
         return `"${v.replace(/"/g,'""')}"`;
       }).join(','));
       return [header, ...lines].join('\\n');
     }
+    function addDays(dateStr, days){
+      const d = new Date(dateStr);
+      d.setDate(d.getDate()+days);
+      return d.toISOString().slice(0,10);
+    }
 
-    /* ---------- Default mock resources (45) ---------- */
+    /* ---------- Small mock resources (replaceable) ---------- */
     function generateResources(n=45){
       return Array.from({length:n}).map((_,i)=>({
         id: `R${i+1}`, name: `Resource ${i+1}`, role: i%6===0 ? 'Trainer' : 'Field',
-        capacityDaysPerWeek: 6, nextFreeDate: null
+        capacityDaysPerWeek: 6
       }));
     }
 
-    /* ---------- Auto allocation (greedy) ---------- */
-    // Accepts resources (array) and tasks (locations). Mutates a copy and returns new tasks array with assignedResourceId/plannedStart/plannedEnd.
+    /* ---------- Greedy allocator ---------- */
     function autoAllocate(resources, tasks, projectStart='2025-12-08'){
       const resState = resources.map(r => ({...r, nextFreeDate: projectStart}));
       const locs = tasks.map(t => ({...t}));
 
-      // sort: trainingType (2 first), then duration desc
+      // sort: prefer trainingType 2 (long) then 3 then 1; longer durations earlier
       locs.sort((a,b)=> (b.trainingType||0) - (a.trainingType||0) || (b.durationDays||0) - (a.durationDays||0));
 
       for (const loc of locs){
-        // pick resource with earliest nextFreeDate
-        resState.sort((a,b) => new Date(a.nextFreeDate) - new Date(b.nextFreeDate));
+        resState.sort((a,b)=> new Date(a.nextFreeDate) - new Date(b.nextFreeDate));
         const candidate = resState[0];
-        if (!candidate) break;
+        if(!candidate) break;
         loc.assignedResourceId = candidate.id;
         loc.plannedStart = candidate.nextFreeDate;
-        loc.plannedEnd = addDays(loc.plannedStart, (loc.durationDays || 1) - 1);
+        loc.plannedEnd = addDays(loc.plannedStart, (loc.durationDays||1)-1);
         candidate.nextFreeDate = addDays(loc.plannedEnd, 1);
       }
       return locs;
     }
 
-    /* ---------- Excel import helpers (SheetJS) ---------- */
+    /* ---------- SheetJS helpers ---------- */
     function readExcelFile(file){
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = (e) => {
           const data = e.target.result;
           const wb = XLSX.read(data, { type: 'binary' });
-          const sheets = wb.SheetNames;
           const parsed = {};
-          for (const s of sheets){
+          for (const s of wb.SheetNames){
             const ws = wb.Sheets[s];
             parsed[s] = XLSX.utils.sheet_to_json(ws, {defval: ''});
           }
-          resolve({sheets, parsed});
+          resolve({sheets: wb.SheetNames, parsed});
         };
-        reader.onerror = (err) => reject(err);
+        reader.onerror = reject;
         reader.readAsBinaryString(file);
       });
     }
 
-    /* ---------- Small Gantt component ---------- */
+    /* ---------- Gantt small preview ---------- */
     function Gantt({rows}){
       const dates = rows.flatMap(r => r.plannedStart ? [new Date(r.plannedStart), new Date(r.plannedEnd)] : []).filter(Boolean);
-      if (dates.length === 0) return (<div className="italic text-sm">No planned dates. Run allocation to generate a timeline.</div>);
+      if(dates.length===0) return <div className="italic text-sm">No planned dates yet</div>;
       const minDate = new Date(Math.min(...dates.map(d=>d.getTime())));
       const maxDate = new Date(Math.max(...dates.map(d=>d.getTime())));
       const days = Math.ceil((maxDate - minDate)/(1000*60*60*24)) + 1;
-
       return (
         <div className="overflow-auto border rounded p-2 bg-white">
-          <div className="text-xs mb-2">Timeline: {formatDate(minDate)} → {formatDate(maxDate)} ({days} days)</div>
+          <div className="text-xs mb-2">Timeline: {minDate.toISOString().slice(0,10)} → {maxDate.toISOString().slice(0,10)} ({days} days)</div>
           <div className="space-y-1">
-            {rows.map(r => (
+            {rows.map(r=>(
               <div key={r.id} className="flex items-center">
                 <div className="w-40 text-xs truncate">{r.name} <span className="text-gray-400">({r.assignedResourceId||'unassigned'})</span></div>
                 <div className="flex-1 h-6 relative bg-gray-50 rounded">
                   {r.plannedStart && (
-                    <div
-                      className="absolute h-6 rounded shadow"
-                      style={{
-                        left: `${((new Date(r.plannedStart)-minDate)/(1000*60*60*24))/days*100}%`,
-                        width: `${(r.durationDays/days)*100}%`,
-                        background: 'linear-gradient(90deg,#60a5fa,#2563eb)'
-                      }}
-                      title={`${r.plannedStart} → ${r.plannedEnd} (${r.durationDays}d)`}
-                    />
+                    <div className="absolute h-6 rounded shadow"
+                         style={{
+                           left: `${((new Date(r.plannedStart)-minDate)/(1000*60*60*24))/days*100}%`,
+                           width: `${(r.durationDays/days)*100}%`,
+                           background: 'linear-gradient(90deg,#60a5fa,#2563eb)'
+                         }}
+                         title={`${r.plannedStart} → ${r.plannedEnd} (${r.durationDays}d)`} />
                   )}
                 </div>
               </div>
@@ -142,343 +134,94 @@
       );
     }
 
-    /* ---------- Main App ---------- */
-    function App(){
-      // tab: 'allocate' or 'dashboard'
-      const [tab, setTab] = useState('allocate');
+    /* ---------- Editable Spreadsheet Component (simple Excel-like) ---------- */
+    function SpreadsheetEditor({columns, rows, onChange, onClose}){
+      // columns: array of column keys; rows: array of objects
+      const [localRows, setLocalRows] = useState(rows.map(r=>({...r})));
 
-      // resources (you can replace this with real resource upload later)
-      const [resources, setResources] = useState(() => generateResources(45));
+      useEffect(()=> setLocalRows(rows.map(r=>({...r}))), [rows]);
 
-      // excel import
-      const [excelSheets, setExcelSheets] = useState([]); // names
-      const [excelData, setExcelData] = useState({}); // {sheetName: rows[]}
-      const [selectedSheet, setSelectedSheet] = useState('');
-      const [tasks, setTasks] = useState([]); // tasks loaded from sheet
-      const [mapping, setMapping] = useState({id:null, name:null, state:null, trainingType:null, durationDays:null});
-      const [projectStart, setProjectStart] = useState(() => {
-        const d = new Date(); d.setDate(d.getDate()+7); return d.toISOString().slice(0,10);
-      });
-
-      // allocations state (tasks with assignedResourceId/plannedStart/plannedEnd)
-      const [allocations, setAllocations] = useState(null);
-
-      // charts refs
-      const utilChartRef = useRef(null);
-      const utilChartInstance = useRef(null);
-
-      // load excel file
-      async function handleFile(e){
-        const f = e.target.files[0];
-        if(!f) return;
-        try{
-          const {sheets, parsed} = await readExcelFile(f);
-          setExcelSheets(sheets);
-          setExcelData(parsed);
-          // pick the first likely sheet (we default to first sheet)
-          setSelectedSheet(sheets[0]);
-          // show first 20 rows as tasks suggestion
-          const sample = parsed[sheets[0]].slice(0,200);
-          // auto detect columns: simple heuristics
-          const cols = Object.keys(sample[0] || {});
-          const lower = cols.map(c=>c.toLowerCase());
-          const map = {id:null, name:null, state:null, trainingType:null, durationDays:null};
-          for (const c of cols){
-            const lc = c.toLowerCase();
-            if (!map.id && (lc.includes('id') || lc.includes('location') || lc.includes('site'))) map.id = c;
-            if (!map.name && (lc.includes('location') && !lc.includes('id') || lc.includes('site name') || lc.includes('name'))) map.name = c;
-            if (!map.state && (lc.includes('state') || lc.includes('region') || lc.includes('zone'))) map.state = c;
-            if (!map.trainingType && (lc.includes('type') || lc.includes('training'))) map.trainingType = c;
-            if (!map.durationDays && (lc.includes('duration') || lc.includes('days'))) map.durationDays = c;
-          }
-          setMapping(map);
-          setTasks(sample.map((r,i)=>({
-            id: r[map.id] || `L${i+1}`,
-            name: r[map.name] || r[map.id] || `Location ${i+1}`,
-            state: r[map.state] || '',
-            trainingType: r[map.trainingType] || '',
-            durationDays: r[map.durationDays] || 1,
-            assignedResourceId: null, plannedStart: null, plannedEnd: null
-          })));
-        }catch(err){
-          alert('Failed to read Excel: ' + err.message);
-        }
+      function updateCell(rowIdx, col, value){
+        const next = localRows.slice();
+        next[rowIdx] = {...next[rowIdx], [col]: value};
+        setLocalRows(next);
+        onChange && onChange(next);
       }
-
-      // when sheet selection changes show preview
-      useEffect(()=> {
-        if(!selectedSheet || !excelData[selectedSheet]) return;
-        const rows = excelData[selectedSheet].slice(0,500);
-        // build tasks using current mapping
-        const t = rows.map((r,i)=>({
-          id: r[mapping.id] || `L${i+1}`,
-          name: r[mapping.name] || r[mapping.id] || `Location ${i+1}`,
-          state: r[mapping.state] || '',
-          trainingType: r[mapping.trainingType] || '',
-          durationDays: +(r[mapping.durationDays] || 1),
-          assignedResourceId: null, plannedStart: null, plannedEnd: null
-        }));
-        setTasks(t);
-      }, [selectedSheet, excelData, mapping]);
-
-      // Auto allocate button
-      function handleAutoAllocate(){
-        const result = autoAllocate(resources, tasks, projectStart);
-        setAllocations({resources, locations: result});
-        setTasks(result);
-        setTab('allocate');
+      function addRow(){
+        const newRow = {};
+        columns.forEach(c => newRow[c] = '');
+        setLocalRows(prev => { const n = [...prev, newRow]; onChange && onChange(n); return n; });
       }
-
-      // Manual assignment change
-      function handleAssign(taskId, resourceId){
-        const newTasks = tasks.map(t => t.id === taskId ? {...t, assignedResourceId: resourceId} : t);
-        setTasks(newTasks);
+      function removeRow(i){
+        const next = localRows.slice(); next.splice(i,1);
+        setLocalRows(next); onChange && onChange(next);
       }
-
-      // Export tasks as CSV
-      function handleExport(){
-        const rows = tasks.map(t => ({
-          id: t.id, name: t.name, state: t.state, trainingType: t.trainingType,
-          durationDays: t.durationDays, assignedResourceId: t.assignedResourceId || '', plannedStart: t.plannedStart || '', plannedEnd: t.plannedEnd || ''
-        }));
-        const csv = toCSV(rows, ['id','name','state','trainingType','durationDays','assignedResourceId','plannedStart','plannedEnd']);
-        downloadFile(csv, 'allocations_export.csv');
-      }
-
-      // Build dashboard data: utilization per resource
-      const dashboardData = useMemo(()=>{
-        // base: compute total assigned days per resource
-        const map = {};
-        for (const r of resources) map[r.id] = {id: r.id, name: r.name, assignedDays: 0, capacityDays: (r.capacityDaysPerWeek || 6) * 4}; // assume 4 weeks window for capacity baseline
-        for (const t of tasks){
-          if (t.assignedResourceId){
-            map[t.assignedResourceId].assignedDays += (t.durationDays || 0);
-          }
-        }
-        const list = Object.values(map);
-        return list.sort((a,b)=> b.assignedDays - a.assignedDays);
-      }, [resources, tasks]);
-
-      // draw chart on dashboard
-      useEffect(()=>{
-        if(tab !== 'dashboard') return;
-        const ctx = utilChartRef.current && utilChartRef.current.getContext('2d');
-        if(!ctx) return;
-        const labels = dashboardData.map(d => d.id);
-        const values = dashboardData.map(d => d.assignedDays);
-        if(utilChartInstance.current) utilChartInstance.current.destroy();
-        utilChartInstance.current = new Chart(ctx, {
-          type: 'bar',
-          data: { labels, datasets: [{ label: 'Assigned days', data: values }] },
-          options: { responsive: true, maintainAspectRatio: false }
+      function pasteFromClipboard(e){
+        // simple paste handler: parse TSV or CSV and append rows
+        navigator.clipboard.readText().then(text => {
+          if(!text) return;
+          const lines = text.trim().split(/\\r?\\n/);
+          const parsed = lines.map(line => line.split(/\\t|,/));
+          const newRows = parsed.map(arr => {
+            const obj = {};
+            for(let i=0;i<columns.length;i++) obj[columns[i]] = arr[i] || '';
+            return obj;
+          });
+          setLocalRows(prev => { const n = [...prev, ...newRows]; onChange && onChange(n); return n; });
         });
-      }, [tab, dashboardData]);
-
-      /* ---------- UI parts ---------- */
-
-      function AllocateTab(){
-        return (
-          <div className="grid grid-cols-12 gap-6">
-            <aside className="col-span-3 bg-white rounded p-4 shadow-sm">
-              <h2 className="font-medium">Import tasks</h2>
-              <div className="mt-3 space-y-3 text-sm">
-                <label className="block">
-                  Upload Excel (XLSX)
-                  <input type="file" accept=".xlsx,.xls" onChange={handleFile} className="mt-1 block w-full" />
-                </label>
-
-                <label className="block">
-                  Select sheet
-                  <select value={selectedSheet} onChange={e=>setSelectedSheet(e.target.value)} className="mt-1 block w-full p-2 border rounded">
-                    <option value="">-- pick sheet --</option>
-                    {excelSheets.map(s=> <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </label>
-
-                <div>
-                  <div className="text-xs text-slate-600 mb-1">Column mapping (suggested)</div>
-                  {['id','name','state','trainingType','durationDays'].map(key => (
-                    <label key={key} className="block text-xs">
-                      {key} &nbsp;
-                      <select value={mapping[key]||''} onChange={e=>setMapping({...mapping,[key]: e.target.value})} className="mt-1 block w-full p-2 border rounded">
-                        <option value=''>-- pick column --</option>
-                        {selectedSheet && Object.keys(excelData[selectedSheet] && excelData[selectedSheet][0] ? excelData[selectedSheet][0] : {}).map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </label>
-                  ))}
-                </div>
-
-                <label className="block">
-                  Project start
-                  <input type="date" className="mt-1 block w-full p-2 border rounded" value={projectStart} onChange={e=>setProjectStart(e.target.value)} />
-                </label>
-
-                <div className="flex gap-2">
-                  <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={handleAutoAllocate}>Auto Allocate</button>
-                  <button className="px-3 py-2 bg-green-600 text-white rounded" onClick={handleExport}>Export CSV</button>
-                </div>
-
-                <div className="text-xs text-slate-500 mt-2">
-                  Detected sheet: <span className="font-semibold">{selectedSheet || '—'}</span>
-                </div>
-              </div>
-            </aside>
-
-            <section className="col-span-6">
-              <div className="bg-white p-3 rounded shadow-sm">
-                <h3 className="font-medium">Task list (interactive)</h3>
-                <div className="mt-2 text-xs text-slate-600">Click resource dropdown to assign or swap a resource. Use Auto Allocate for a first-pass plan.</div>
-
-                <div className="mt-3 max-h-[60vh] overflow-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="sticky top-0 bg-white">
-                      <tr className="text-slate-500"><th className="p-1">ID</th><th>Location</th><th>State</th><th>Type</th><th>D</th><th>Assigned</th></tr>
-                    </thead>
-                    <tbody>
-                      {tasks.map(t => (
-                        <tr key={t.id} className="border-t">
-                          <td className="p-1 align-top">{t.id}</td>
-                          <td className="truncate p-1">{t.name}</td>
-                          <td className="p-1">{t.state}</td>
-                          <td className="p-1">{t.trainingType}</td>
-                          <td className="p-1">{t.durationDays}</td>
-                          <td className="p-1">
-                            <select value={t.assignedResourceId || ''} onChange={e=>handleAssign(t.id, e.target.value)} className="p-1 text-xs border rounded">
-                              <option value=''>-- unassigned --</option>
-                              {resources.map(r => <option key={r.id} value={r.id}>{r.id} — {r.name}</option>)}
-                            </select>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="mt-3">
-                  <Gantt rows={tasks.slice(0,80)} />
-                </div>
-              </div>
-            </section>
-
-            <aside className="col-span-3 bg-white p-4 rounded shadow-sm">
-              <h4 className="font-medium">Quick summary</h4>
-              <div className="mt-2 text-sm">
-                <div>Tasks loaded: <span className="font-semibold">{tasks.length}</span></div>
-                <div className="mt-2">Assigned: <span className="font-semibold">{tasks.filter(t=>t.assignedResourceId).length}</span></div>
-                <div>Unassigned: <span className="font-semibold">{tasks.filter(t=>!t.assignedResourceId).length}</span></div>
-              </div>
-
-              <div className="mt-4">
-                <h4 className="font-medium text-sm">Quick actions</h4>
-                <button className="mt-2 w-full py-2 bg-amber-500 text-white rounded" onClick={()=>{
-                  // quick: allocate only tasks with trainingType == 2
-                  const filtered = tasks.filter(t=>String(t.trainingType)==='2');
-                  const res = autoAllocate(resources, filtered, projectStart);
-                  // apply back
-                  const master = tasks.map(t=> {
-                    const f = res.find(x=> x.id === t.id);
-                    return f ? {...t, assignedResourceId: f.assignedResourceId, plannedStart: f.plannedStart, plannedEnd: f.plannedEnd} : t;
-                  });
-                  setTasks(master);
-                }}>Allocate Type 2 only</button>
-
-                <button className="mt-2 w-full py-2 bg-red-600 text-white rounded" onClick={()=>{
-                  const cleared = tasks.map(t=> ({...t, assignedResourceId: null, plannedStart: null, plannedEnd: null}));
-                  setTasks(cleared);
-                }}>Clear assignments</button>
-              </div>
-
-              <div className="mt-4 text-xs text-slate-500">
-                Tip: After import, review the column mapping if any fields are missing or mis-detected.
-              </div>
-            </aside>
-          </div>
-        );
-      }
-
-      function DashboardTab(){
-        return (
-          <div className="grid grid-cols-12 gap-6">
-            <section className="col-span-8 bg-white p-4 rounded shadow-sm">
-              <h3 className="font-medium">Resource utilization</h3>
-              <div className="mt-2 text-xs text-slate-600">Total assigned days per resource (current loaded tasks)</div>
-              <div className="mt-4 h-64">
-                <canvas ref={utilChartRef} />
-              </div>
-
-              <div className="mt-4">
-                <h4 className="font-medium">Top resources</h4>
-                <div className="mt-2 max-h-56 overflow-auto text-sm">
-                  <table className="w-full text-left text-xs">
-                    <thead><tr className="text-slate-500"><th>Res</th><th>Name</th><th>Assigned days</th><th>Capacity (4wk)</th></tr></thead>
-                    <tbody>
-                      {dashboardData.map(d => (
-                        <tr key={d.id} className="border-t">
-                          <td className="p-1">{d.id}</td>
-                          <td className="p-1">{d.name}</td>
-                          <td className="p-1">{d.assignedDays}</td>
-                          <td className="p-1">{d.capacityDays}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </section>
-
-            <aside className="col-span-4 bg-white p-4 rounded shadow-sm">
-              <h4 className="font-medium">Overview</h4>
-              <div className="mt-2 text-sm">
-                <div>Resources: <span className="font-semibold">{resources.length}</span></div>
-                <div>Tasks: <span className="font-semibold">{tasks.length}</span></div>
-                <div>Assigned tasks: <span className="font-semibold">{tasks.filter(t=>t.assignedResourceId).length}</span></div>
-              </div>
-
-              <div className="mt-4">
-                <h4 className="font-medium">Export</h4>
-                <div className="mt-2">
-                  <button className="w-full py-2 bg-green-600 text-white rounded" onClick={()=>{
-                    const rows = dashboardData.map(d => ({id: d.id, name: d.name, assignedDays: d.assignedDays, capacityDays: d.capacityDays}));
-                    const csv = toCSV(rows, ['id','name','assignedDays','capacityDays']);
-                    downloadFile(csv, 'resource_utilization.csv');
-                  }}>Export utilization CSV</button>
-                </div>
-              </div>
-
-              <div className="mt-4 text-xs text-slate-500">
-                Note: Capacity baseline is currently (capacityDaysPerWeek * 4). Adjust in resource data if you want a different baseline.
-              </div>
-            </aside>
-          </div>
-        );
       }
 
       return (
-        <div className="p-6 min-h-screen bg-slate-50 text-slate-800">
-          <header className="mb-6">
-            <h1 className="text-2xl font-semibold">Resource Management</h1>
-            <p className="text-sm text-slate-600">Two tabs: Allocate tasks (upload Excel & map columns) and Dashboard for utilization.</p>
-          </header>
+        <div className="fixed inset-0 z-50 bg-black/30 flex items-start justify-center p-6">
+          <div className="bg-white rounded shadow-lg w-full max-w-6xl max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="font-medium">Spreadsheet Editor</div>
+              <div className="flex items-center gap-2">
+                <button className="px-3 py-1 text-xs bg-gray-100 rounded" onClick={addRow}>Add row</button>
+                <button className="px-3 py-1 text-xs bg-gray-100 rounded" onClick={pasteFromClipboard}>Paste</button>
+                <button className="px-3 py-1 text-xs bg-rose-500 text-white rounded" onClick={onClose}>Done</button>
+              </div>
+            </div>
 
-          <div className="mb-4">
-            <nav className="flex gap-2">
-              <button className={`px-3 py-2 rounded ${tab==='allocate' ? 'bg-blue-600 text-white' : 'bg-white border'}`} onClick={()=>setTab('allocate')}>Allocate</button>
-              <button className={`px-3 py-2 rounded ${tab==='dashboard' ? 'bg-blue-600 text-white' : 'bg-white border'}`} onClick={()=>setTab('dashboard')}>Dashboard</button>
-            </nav>
+            <div className="p-4">
+              <div className="overflow-auto border rounded">
+                <table className="min-w-full text-xs">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="p-2">#</th>
+                      {columns.map(c=> <th key={c} className="p-2 text-left">{c}</th>)}
+                      <th className="p-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {localRows.map((r,ri)=>(
+                      <tr key={ri} className="border-t">
+                        <td className="p-1 text-xs">{ri+1}</td>
+                        {columns.map(col=>(
+                          <td key={col} className="p-1">
+                            <input className="w-full p-1 text-xs border rounded" value={r[col]||''} onChange={e=>updateCell(ri,col,e.target.value)} />
+                          </td>
+                        ))}
+                        <td className="p-1">
+                          <button className="text-xs text-rose-600" onClick={()=>removeRow(ri)}>Delete</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-3 text-xs text-slate-500">Tip: paste rows from Excel (copy from Excel, click Paste) or type directly.</div>
+            </div>
           </div>
-
-          <main>
-            {tab === 'allocate' ? <AllocateTab /> : <DashboardTab />}
-          </main>
-
-          <footer className="mt-6 text-xs text-slate-500">Static prototype for GitHub Pages — replace mock resources with your real resource list when ready.</footer>
         </div>
       );
     }
 
-    // render
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-  </script>
-</body>
-</html>
+    /* ---------- Main Single-file SPA ---------- */
+    function App(){
+      const [page, setPage] = useState('landing'); // landing, resourceAllocation, scheduling (placeholder), dashboards, expenses, docs
+      const [showEditor, setShowEditor] = useState(false);
+
+      // resources & tasks stored in state; resources can be uploaded later
+      const [resources, setResources] = useState(() =>
