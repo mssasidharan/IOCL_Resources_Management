@@ -4,638 +4,531 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Project Management</title>
+
+  <!-- Tailwind CDN for styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React + ReactDOM UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <!-- Babel for JSX in-browser (prototype) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Chart.js for charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
-    :root{
-      --bg:#f1f5f9; --card:#ffffff; --accent:#0b74da;
-      --muted:#6b7280; --tile-shadow: 0 6px 14px rgba(15,23,42,0.06);
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-    }
-    body{margin:0;background:var(--bg);color:#0f172a}
-    .wrap{padding:28px;max-width:1200px;margin:0 auto}
-    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
-    h1{margin:0;font-size:24px}
-    .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-    .tile{background:var(--card);border-radius:10px;padding:18px;box-shadow:var(--tile-shadow);display:flex;flex-direction:column;justify-content:space-between;min-height:110px}
-    .tile h3{margin:0;font-size:16px}
-    .tile p{margin:6px 0 0;color:var(--muted);font-size:13px}
-    .btn{display:inline-block;padding:8px 12px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;font-size:13px}
-    .page{display:none;margin-top:18px}
-    .page.active{display:block}
-    .grid-2{display:grid;grid-template-columns:1fr 360px;gap:16px}
-    table{width:100%;border-collapse:collapse}
-    th,td{padding:8px;border-bottom:1px solid #eef2f7;font-size:13px}
-    .small{font-size:13px;color:var(--muted)}
-    .editor{position:fixed;inset:0;background:rgba(2,6,23,0.5);display:flex;align-items:center;justify-content:center}
-    .editor .box{background:#fff;padding:12px;border-radius:8px;width:95%;max-width:1100px;max-height:88vh;overflow:auto}
-    .input{padding:8px;border:1px solid #e6edf3;border-radius:6px;width:100%}
-    .row-btn{padding:6px 10px;border-radius:6px;background:#ef4444;color:#fff;border:none}
-    .muted{color:var(--muted);font-size:13px}
-    .cols-ui{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-    .col-pill{background:#eef2ff;padding:6px 8px;border-radius:8px;font-size:13px}
-    .control-row{display:flex;gap:8px;align-items:center}
-    input[type="text"]{padding:6px;border:1px solid #e6edf3;border-radius:6px}
-    .resources-list{max-height:220px;overflow:auto;border:1px solid #eef2f7;padding:8px;border-radius:6px}
-    .resource-row{display:flex;justify-content:space-between;align-items:center;padding:6px 4px;border-bottom:1px dashed #f1f5f9}
-    .help{font-size:12px;color:#6b7280}
+    body { background: #f8fafc; }
+    /* small helper */
+    .card { background: white; border-radius: 12px; box-shadow: 0 6px 18px rgba(15,23,42,0.06); }
+    .tiny { font-size: 12px; color: #6b7280; }
+    .pill { background: #eef2ff; color: #1e40af; padding: 6px 8px; border-radius: 8px; font-weight: 600; }
+    .table-scroll { max-height: 52vh; overflow:auto; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div>
-        <h1>Project Management</h1>
-        <div class="small">Landing • Resource Allocation prototype</div>
-      </div>
-      <div>
-        <button id="homeBtn" class="btn" onclick="show('landing')">Home</button>
-      </div>
-    </header>
+  <div id="root"></div>
 
-    <!-- Landing tiles -->
-    <div id="landing" class="page active">
-      <div class="tiles">
-        <div class="tile">
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    /**************************************************************************
+     * Utilities
+     **************************************************************************/
+    function uid(prefix='id'){ return prefix + Math.random().toString(36).slice(2,9); }
+    function downloadFile(content, filename, mime='text/csv'){
+      const blob = new Blob([content], {type: mime});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    }
+    function toCSV(rows, columns){
+      const header = columns.join(',');
+      const lines = rows.map(r => columns.map(c => {
+        const v = r[c] == null ? '' : String(r[c]);
+        return `"${v.replace(/"/g,'""')}"`;
+      }).join(','));
+      return [header, ...lines].join('\\n');
+    }
+    function parseDate(s){ if(!s) return null; const d = new Date(s); return isNaN(d) ? null : d; }
+    function dateToStr(d){ if(!d) return ''; return new Date(d).toISOString().slice(0,10); }
+    function daysBetween(a,b){ const A = new Date(a); const B = new Date(b); return Math.max(0, Math.round((B - A)/(1000*60*60*24))+1); }
+
+    /**************************************************************************
+     * Default demo data
+     **************************************************************************/
+    const DEFAULT_TASKS = [
+      { id: 'T1', typeOfProgram:'Type-2', lob:'LPG', stateOffice:'Tamil Nadu State Office', locationName:'LPG BP - ERODE', startDate:'2025-10-27', endDate:'2025-11-01', actualStart:'', deferredStart:'', primaryFac:'R1', secondaryFac:'R2' },
+      { id: 'T2', typeOfProgram:'Type-3', lob:'LPG', stateOffice:'Karnataka State Office', locationName:'LPG BP - MYSURU', startDate:'2025-11-05', endDate:'2025-11-06', actualStart:'', deferredStart:'', primaryFac:'', secondaryFac:'' }
+    ];
+    const DEFAULT_RESOURCES = [
+      { id:'R1', name:'Rahul Kumar', baseLocation:'Chennai', stateOffice:'Tamil Nadu', designation:'Trainer', capacityDaysPerWeek:6 },
+      { id:'R2', name:'Arun B', baseLocation:'Coimbatore', stateOffice:'Tamil Nadu', designation:'Trainer', capacityDaysPerWeek:6 },
+      { id:'R3', name:'Nisha P', baseLocation:'Bengaluru', stateOffice:'Karnataka', designation:'Field', capacityDaysPerWeek:6 }
+    ];
+
+    /**************************************************************************
+     * Local storage helpers
+     **************************************************************************/
+    function saveToLocal(key, value){ try { localStorage.setItem(key, JSON.stringify(value)); } catch(e){} }
+    function loadFromLocal(key, fallback){ try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : fallback; } catch(e) { return fallback; } }
+
+    /**************************************************************************
+     * App
+     **************************************************************************/
+    function App(){
+      // pages: landing, tasks, allocation
+      const [page, setPage] = useState('landing');
+
+      // Load persistent data or defaults
+      const [tasks, setTasks] = useState(() => loadFromLocal('pm_tasks', DEFAULT_TASKS));
+      const [resources, setResources] = useState(() => loadFromLocal('pm_resources', DEFAULT_RESOURCES));
+
+      // selection / UI
+      useEffect(()=> saveToLocal('pm_tasks', tasks), [tasks]);
+      useEffect(()=> saveToLocal('pm_resources', resources), [resources]);
+
+      return (
+        <div className="p-6 min-h-screen">
+          <Header onNav={setPage} />
+          <main className="mt-6">
+            {page === 'landing' && <Landing onOpen={(p)=> setPage(p)} />}
+            {page === 'tasks' && <TasksPage tasks={tasks} setTasks={setTasks} onBack={()=> setPage('landing')} />}
+            {page === 'allocation' && <AllocationPage tasks={tasks} setTasks={setTasks} resources={resources} setResources={setResources} onBack={()=> setPage('landing')} />}
+          </main>
+          <footer className="mt-8 text-xs text-gray-500">Prototype — data stored locally in browser. Export CSV to back up.</footer>
+        </div>
+      );
+    }
+
+    /**************************************************************************
+     * Header
+     **************************************************************************/
+    function Header({ onNav }){
+      return (
+        <div className="flex items-center justify-between">
           <div>
-            <h3>Project Scheduling</h3>
-            <p>Gantt chart, timelines and milestones</p>
+            <div className="text-2xl font-bold">Project Management</div>
+            <div className="text-sm text-gray-500">Manage tasks, allocate resources, and monitor utilization</div>
           </div>
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <a href="#" class="btn" onclick="show('scheduling')">Open</a>
-            <div class="small">Quick</div>
+          <div className="flex gap-2 items-center">
+            <button className="px-3 py-2 rounded bg-white border" onClick={()=>onNav('landing')}>Home</button>
+            <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={()=>onNav('tasks')}>Tasks</button>
+            <button className="px-3 py-2 rounded bg-indigo-600 text-white" onClick={()=>onNav('allocation')}>Resource Allocation</button>
           </div>
         </div>
+      );
+    }
 
-        <div class="tile">
-          <div>
-            <h3>Resource Allocation</h3>
-            <p>Assign resources, interactive planner</p>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <a href="#" class="btn" onclick="show('resource')">Open</a>
-            <div class="small">Start</div>
-          </div>
-        </div>
-
-        <div class="tile">
-          <div>
-            <h3>Dashboards</h3>
-            <p>Progress & utilization</p>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <a href="#" class="btn" onclick="show('dash')">Open</a>
-            <div class="small">View</div>
-          </div>
-        </div>
-
-        <div class="tile">
-          <div>
-            <h3>Expenses</h3>
-            <p>Costs & budgets</p>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <a href="#" class="btn" onclick="show('expenses')">Open</a>
-            <div class="small">Manage</div>
-          </div>
-        </div>
-
-        <div class="tile">
-          <div>
-            <h3>Document Tracker</h3>
-            <p>Files & reports</p>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <a href="#" class="btn" onclick="show('docs')">Open</a>
-            <div class="small">Files</div>
-          </div>
-        </div>
-
-        <div class="tile">
-          <div>
-            <h3>More</h3>
-            <p>Add modules later</p>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <a href="#" class="btn" onclick="alert('We will add more modules')">Open</a>
-            <div class="small">Soon</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Simple Resource Allocation page -->
-    <div id="resource" class="page">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    /**************************************************************************
+     * Landing with tiles
+     **************************************************************************/
+    function Landing({ onOpen }){
+      const tiles = [
+        { key:'tasks', title:'Task Creation', desc:'Add and manage tasks (locations, dates, facilitators)' },
+        { key:'allocation', title:'Resource Allocation', desc:'Allocate resources and manage resource details' },
+        { key:'dash', title:'Dashboards', desc:'Utilization & monthly views (inside Resource Management)' },
+        { key:'scheduling', title:'Project Scheduling', desc:'Gantt & timelines (future)' },
+      ];
+      return (
         <div>
-          <h2>Resource Allocation</h2>
-          <div class="small">Upload task list (Excel later) • Edit in the built spreadsheet editor</div>
-        </div>
-        <div>
-          <button class="btn" onclick="openEditor()">⋯ Edit sheet</button>
-          <button class="btn" onclick="openResourcesEditor()">⚙ Manage resources</button>
-          <button class="btn" onclick="autoAllocate()">Auto Allocate</button>
-        </div>
-      </div>
-
-      <div class="grid-2">
-        <div>
-          <h4 class="small">Task list</h4>
-          <div class="help" style="margin-top:4px">Use the editor to add/remove/rename columns or paste rows from Excel. Assign resources using the editor or auto-allocate.</div>
-          <div style="margin-top:8px">
-            <table id="taskTable">
-              <thead><tr id="taskHeadRow"></tr></thead>
-              <tbody id="taskBody"></tbody>
-            </table>
+          <div className="grid grid-cols-3 gap-6">
+            {tiles.map(t => (
+              <div key={t.key} className="card p-6">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-lg font-semibold">{t.title}</div>
+                    <div className="tiny mt-1">{t.desc}</div>
+                  </div>
+                  <div>
+                    <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={()=> onOpen(t.key)}>Open</button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
+
+          <div className="mt-6 tiny text-gray-600">Tip: Start by adding tasks in Task Creation, then define your resources and allocate.</div>
         </div>
+      );
+    }
 
-        <aside>
-          <h4 class="small">Resources</h4>
-          <div class="muted" style="margin-top:6px">Edit or add resources below — changes reflect immediately.</div>
-          <div class="resources-list" id="resourceList"></div>
+    /**************************************************************************
+     * Tasks Page - full featured task creation and editing
+     **************************************************************************/
+    function TasksPage({ tasks, setTasks, onBack }){
+      // columns based on screenshot + added actualStart/deferredStart
+      const columns = [
+        { key:'typeOfProgram', label:'Type of Program' },
+        { key:'lob', label:'LOB' },
+        { key:'stateOffice', label:'State Office' },
+        { key:'locationName', label:'Location Name' },
+        { key:'startDate', label:'Start Date' },
+        { key:'endDate', label:'End Date' },
+        { key:'actualStart', label:'Actual Start' },
+        { key:'deferredStart', label:'Deferred Start' },
+        { key:'primaryFac', label:'Primary Facilitator' },
+        { key:'secondaryFac', label:'Secondary Facilitator' }
+      ];
 
-          <div style="margin-top:12px">
-            <input id="newResName" placeholder="Resource name (e.g. Ravi)" style="width:100%;padding:8px;border:1px solid #e6edf3;border-radius:6px;margin-bottom:6px"/>
-            <div style="display:flex;gap:8px">
-              <button class="btn" onclick="addResource()">Add Resource</button>
-              <button class="btn" onclick="exportCSV()">Export CSV</button>
+      // helpers
+      function addRow(){
+        const id = uid('T');
+        const r = { id, typeOfProgram:'Type-2', lob:'LPG', stateOffice:'', locationName:'', startDate:'', endDate:'', actualStart:'', deferredStart:'', primaryFac:'', secondaryFac:'' };
+        setTasks(prev => [r, ...prev]);
+      }
+      function updateRow(id, updates){
+        setTasks(prev => prev.map(t => t.id === id ? {...t, ...updates} : t));
+      }
+      function deleteRow(id){
+        if(!confirm('Delete task ' + id + '?')) return;
+        setTasks(prev => prev.filter(t => t.id !== id));
+      }
+      function importCSV(evt){
+        const f = evt.target.files[0];
+        if(!f) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+          const text = e.target.result;
+          const lines = text.trim().split(/\\r?\\n/);
+          const headers = lines[0].split(',');
+          const rows = lines.slice(1).map(line => {
+            const arr = line.split(',');
+            const obj = {};
+            headers.forEach((h, idx) => obj[h.trim()] = (arr[idx]||'').replace(/^"|"$/g,''));
+            return {
+              id: uid('T'),
+              typeOfProgram: obj['Type of Program']||obj['typeOfProgram']||'Type-2',
+              lob: obj['LOB']||obj['lob']||'',
+              stateOffice: obj['State Office']||obj['stateOffice']||'',
+              locationName: obj['Location Name']||obj['locationName']||'',
+              startDate: obj['Start Date']||obj['startDate']||'',
+              endDate: obj['End Date']||obj['endDate']||'',
+              actualStart: obj['Actual Start']||'',
+              deferredStart: obj['Deferred Start']||'',
+              primaryFac: obj['Primary Facilitator']||'',
+              secondaryFac: obj['Secondary Facilitator']||''
+            };
+          });
+          setTasks(prev => [...rows, ...prev]);
+        };
+        reader.readAsText(f);
+      }
+      function exportCSV(){
+        const columnsOut = columns.map(c=>c.label);
+        const rows = tasks.map(t => columns.map(c => t[c.key] || ''));
+        const header = columnsOut.join(',');
+        const lines = rows.map(r => r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','));
+        downloadFile([header, ...lines].join('\\n'), 'tasks_export.csv');
+      }
+
+      return (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <button className="px-2 py-1 bg-gray-100 rounded mr-2" onClick={onBack}>← Back</button>
+              <span className="text-xl font-semibold">Task Creation</span>
+            </div>
+            <div className="flex gap-2">
+              <label className="px-3 py-2 bg-white border rounded cursor-pointer">
+                Import CSV <input type="file" accept=".csv" onChange={importCSV} className="hidden" />
+              </label>
+              <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={addRow}>Add Row</button>
+              <button className="px-3 py-2 bg-green-600 text-white rounded" onClick={exportCSV}>Export CSV</button>
             </div>
           </div>
-        </aside>
-      </div>
-    </div>
 
-    <!-- Dashboards (simple) -->
-    <div id="dash" class="page">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <h2>Dashboards</h2>
-        <button class="btn" onclick="show('landing')">Back</button>
-      </div>
-      <p class="small">Basic resource utilization preview</p>
-      <div style="margin-top:12px">
-        <table id="utilTable"><thead><tr><th>Resource</th><th>Assigned days</th></tr></thead><tbody></tbody></table>
-      </div>
-    </div>
+          <div className="card p-4">
+            <div className="table-scroll">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500">
+                    <th className="p-2">ID</th>
+                    {columns.map(c => <th key={c.key} className="p-2">{c.label}</th>)}
+                    <th className="p-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tasks.map(t => (
+                    <tr key={t.id} className="border-t">
+                      <td className="p-2">{t.id}</td>
 
-    <div id="scheduling" class="page"><h2>Project Scheduling</h2><p class="small">Placeholder</p></div>
-    <div id="expenses" class="page"><h2>Expenses</h2><p class="small">Placeholder</p></div>
-    <div id="docs" class="page"><h2>Document Tracker</h2><p class="small">Placeholder</p></div>
+                      <td className="p-2">
+                        <input className="input" value={t.typeOfProgram||''} onChange={e=>updateRow(t.id, {typeOfProgram: e.target.value})} />
+                      </td>
 
-  </div>
+                      <td className="p-2"><input className="input" value={t.lob||''} onChange={e=>updateRow(t.id, {lob: e.target.value})} /></td>
 
-  <!-- Editor modal -->
-  <div id="editor" class="editor" style="display:none">
-    <div class="box">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div>
-          <strong>Spreadsheet Editor</strong>
-          <div class="small">You can rename, add, remove columns. Paste rows from Excel (copy → click Paste). Edits update the main task table immediately.</div>
+                      <td className="p-2"><input className="input" value={t.stateOffice||''} onChange={e=>updateRow(t.id, {stateOffice: e.target.value})} /></td>
+
+                      <td className="p-2"><input className="input" value={t.locationName||''} onChange={e=>updateRow(t.id, {locationName: e.target.value})} /></td>
+
+                      <td className="p-2"><input type="date" className="input" value={t.startDate||''} onChange={e=>updateRow(t.id, {startDate: e.target.value})} /></td>
+
+                      <td className="p-2"><input type="date" className="input" value={t.endDate||''} onChange={e=>updateRow(t.id, {endDate: e.target.value})} /></td>
+
+                      <td className="p-2"><input type="date" className="input" value={t.actualStart||''} onChange={e=>updateRow(t.id, {actualStart: e.target.value})} /></td>
+
+                      <td className="p-2"><input type="date" className="input" value={t.deferredStart||''} onChange={e=>updateRow(t.id, {deferredStart: e.target.value})} /></td>
+
+                      <td className="p-2"><input className="input" value={t.primaryFac||''} onChange={e=>updateRow(t.id, {primaryFac: e.target.value})} /></td>
+
+                      <td className="p-2"><input className="input" value={t.secondaryFac||''} onChange={e=>updateRow(t.id, {secondaryFac: e.target.value})} /></td>
+
+                      <td className="p-2">
+                        <button className="px-2 py-1 bg-rose-500 text-white rounded" onClick={()=>deleteRow(t.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-3 tiny text-gray-500">Tip: fill Actual Start when the program begins; use Deferred Start to record postponements.</div>
+          </div>
         </div>
-        <div>
-          <button onclick="closeEditor()" class="row-btn">Done</button>
-        </div>
-      </div>
-
-      <div style="margin-bottom:8px">
-        <div class="control-row">
-          <input id="newColName" placeholder="New column name" type="text"/>
-          <button class="btn" onclick="addColumn()">Add column</button>
-          <button class="btn" onclick="pasteEditor()">Paste rows</button>
-          <button class="btn" onclick="resetColumns()">Reset columns</button>
-        </div>
-      </div>
-
-      <div style="margin-bottom:10px">
-        <div class="cols-ui" id="colsUI"></div>
-      </div>
-
-      <div>
-        <table id="editorTable"><thead><tr id="editorHead"></tr></thead><tbody id="editorBody"></tbody></table>
-      </div>
-
-      <div style="margin-top:8px;">
-        <button onclick="addEditorRow()" class="btn">Add Row</button>
-        <button onclick="downloadTasksCSV()" class="btn" style="background:#10b981">Download CSV</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Resources Editor modal -->
-  <div id="resEditor" class="editor" style="display:none">
-    <div class="box">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div>
-          <strong>Resources Editor</strong>
-          <div class="small">Add, edit or remove resources here. Changes apply instantly.</div>
-        </div>
-        <div><button onclick="closeResEditor()" class="row-btn">Done</button></div>
-      </div>
-
-      <div style="display:flex;gap:8px;margin-bottom:8px">
-        <input id="resNameInput" placeholder="Name (e.g. Ravi Kumar)" type="text" style="flex:1;padding:8px;border:1px solid #e6edf3;border-radius:6px"/>
-        <input id="resRoleInput" placeholder="Role (Trainer/Field)" type="text" style="width:160px;padding:8px;border:1px solid #e6edf3;border-radius:6px"/>
-        <button class="btn" onclick="confirmAddResource()">Add</button>
-      </div>
-
-      <div id="resListInner" style="max-height:50vh;overflow:auto;border:1px solid #eef2f7;padding:8px;border-radius:6px"></div>
-    </div>
-  </div>
-
-  <script>
-    // Data
-    let resources = [
-      {id:'R1', name:'Resource 1', role:'Field', capacityDaysPerWeek:6},
-      {id:'R2', name:'Resource 2', role:'Field', capacityDaysPerWeek:6},
-      {id:'R3', name:'Resource 3', role:'Trainer', capacityDaysPerWeek:6},
-      {id:'R4', name:'Resource 4', role:'Field', capacityDaysPerWeek:6},
-      {id:'R5', name:'Resource 5', role:'Field', capacityDaysPerWeek:6},
-      {id:'R6', name:'Resource 6', role:'Field', capacityDaysPerWeek:6},
-      {id:'R7', name:'Resource 7', role:'Field', capacityDaysPerWeek:6},
-      {id:'R8', name:'Resource 8', role:'Field', capacityDaysPerWeek:6},
-      {id:'R9', name:'Resource 9', role:'Field', capacityDaysPerWeek:6},
-      {id:'R10', name:'Resource 10', role:'Field', capacityDaysPerWeek:6},
-      {id:'R11', name:'Resource 11', role:'Field', capacityDaysPerWeek:6},
-      {id:'R12', name:'Resource 12', role:'Field', capacityDaysPerWeek:6}
-    ];
-
-    // Default columns and tasks
-    let columns = ['id','name','state','trainingType','durationDays','assignedResourceId'];
-    let tasks = [
-      {id:'L1', name:'Location 1', state:'TN', trainingType:2, durationDays:6, assignedResourceId:''},
-      {id:'L2', name:'Location 2', state:'TN', trainingType:2, durationDays:1, assignedResourceId:''},
-      {id:'L3', name:'Location 3', state:'MH', trainingType:3, durationDays:2, assignedResourceId:''}
-    ];
-
-    // UI helpers
-    function show(id){
-      document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-      const el = document.getElementById(id);
-      if(el) el.classList.add('active');
-      window.scrollTo(0,0);
-      if(id==='resource') renderTasks();
-      if(id==='dash') renderUtil();
+      );
     }
 
-    // Task table render
-    function renderTasks(){
-      const headRow = document.getElementById('taskHeadRow');
-      headRow.innerHTML = '';
-      columns.forEach(c => {
-        const th = document.createElement('th'); th.textContent = c; headRow.appendChild(th);
-      });
-      const thAssigned = document.createElement('th'); thAssigned.textContent = 'Actions'; headRow.appendChild(thAssigned);
-
-      const tbody = document.getElementById('taskBody');
-      tbody.innerHTML = '';
-      tasks.forEach((t, idx) => {
-        const tr = document.createElement('tr');
-        columns.forEach(col => {
-          const td = document.createElement('td');
-          let v = t[col] !== undefined ? t[col] : '';
-          td.textContent = v;
-          tr.appendChild(td);
-        });
-        // actions: edit row → open editor and scroll to row
-        const tdAct = document.createElement('td');
-        const editBtn = document.createElement('button'); editBtn.textContent='Edit'; editBtn.className='btn'; editBtn.onclick = ()=>{ openEditor(true, idx); };
-        tdAct.appendChild(editBtn);
-        tr.appendChild(tdAct);
-        tbody.appendChild(tr);
-      });
-
-      renderResourceList();
-    }
-
-    // Resource list render
-    function renderResourceList(){
-      const div = document.getElementById('resourceList');
-      div.innerHTML = '';
-      resources.forEach(r => {
-        const d = document.createElement('div');
-        d.className = 'resource-row';
-        const left = document.createElement('div'); left.innerHTML = '<strong>'+r.id+'</strong> — '+r.name+' <span class="muted">('+r.role+')</span>';
-        const right = document.createElement('div');
-        const edit = document.createElement('button'); edit.textContent='Edit'; edit.onclick = ()=>editResource(r.id);
-        const del = document.createElement('button'); del.textContent='Del'; del.onclick = ()=>removeResource(r.id);
-        edit.style.marginRight='6px';
-        right.appendChild(edit); right.appendChild(del);
-        d.appendChild(left); d.appendChild(right);
-        div.appendChild(d);
-      });
-    }
-
-    function addResource(){
-      const name = document.getElementById('newResName').value.trim();
-      if(!name) return alert('Enter resource name');
-      const id = 'R'+(resources.length+1);
-      resources.push({id, name, role:'Field', capacityDaysPerWeek:6});
-      document.getElementById('newResName').value='';
-      renderResourceList();
-      renderTasks();
-    }
-    function editResource(id){
-      // open resources editor and prefill
-      openResourcesEditor();
-      setTimeout(()=> {
-        const inputs = document.querySelectorAll('.res-edit-row');
-        inputs.forEach(inp=> { if(inp.dataset.id===id) inp.querySelector('.res-name').focus(); });
-      },200);
-    }
-    function removeResource(id){
-      if(!confirm('Remove resource '+id+'?')) return;
-      resources = resources.filter(r=> r.id !== id);
-      // also clear assignedResourceId in tasks
-      tasks = tasks.map(t => ({...t, assignedResourceId: t.assignedResourceId === id ? '' : t.assignedResourceId}));
-      // reindex ids to maintain uniqueness? We'll keep original ids — user can manage
-      renderResourceList();
-      renderTasks();
-    }
-
-    // Spreadsheet editor logic
-    let editorOpen = false;
-    let editorRowToEdit = null; // if editing a single row
-    function openEditor(editSingle=false, rowIndex=0){
-      editorOpen = true;
-      document.getElementById('editor').style.display='flex';
-      buildColsUI();
-      buildEditorTable(editSingle, rowIndex);
-    }
-    function closeEditor(){
-      editorOpen = false;
-      document.getElementById('editor').style.display='none';
-      renderTasks();
-    }
-
-    function buildColsUI(){
-      const ui = document.getElementById('colsUI');
-      ui.innerHTML = '';
-      columns.forEach((c, idx) => {
-        const pill = document.createElement('div'); pill.className='col-pill';
-        pill.innerHTML = '<strong>'+c+'</strong> &nbsp; <button onclick="renameColumn(' + idx + ')">Rename</button> <button onclick="removeColumn(' + idx + ')">Remove</button> <button onclick="moveColumnLeft(' + idx + ')">&larr;</button> <button onclick="moveColumnRight(' + idx + ')">&rarr;</button>';
-        ui.appendChild(pill);
-      });
-    }
-
-    function addColumn(){
-      const name = document.getElementById('newColName').value.trim();
-      if(!name) return alert('Enter a column name');
-      columns.push(name);
-      // add empty field in each task
-      tasks = tasks.map(t => ({...t, [name]: ''}));
-      document.getElementById('newColName').value='';
-      buildColsUI();
-      buildEditorTable();
-      renderTasks();
-    }
-
-    function removeColumn(idx){
-      if(!confirm('Remove column "'+columns[idx]+'"?')) return;
-      const col = columns[idx];
-      columns.splice(idx,1);
-      tasks = tasks.map(t => { const nt = {...t}; delete nt[col]; return nt; });
-      buildColsUI();
-      buildEditorTable();
-      renderTasks();
-    }
-
-    function renameColumn(idx){
-      const newName = prompt('Rename column "'+columns[idx]+'" to:', columns[idx]);
-      if(!newName) return;
-      const old = columns[idx];
-      columns[idx] = newName;
-      tasks = tasks.map(t => { const nt = {...t}; nt[newName] = nt[old]; delete nt[old]; return nt; });
-      buildColsUI();
-      buildEditorTable();
-      renderTasks();
-    }
-
-    function moveColumnLeft(idx){
-      if(idx===0) return;
-      const a = columns[idx-1]; columns[idx-1]=columns[idx]; columns[idx]=a;
-      buildColsUI(); buildEditorTable(); renderTasks();
-    }
-    function moveColumnRight(idx){
-      if(idx===columns.length-1) return;
-      const a = columns[idx+1]; columns[idx+1]=columns[idx]; columns[idx]=a;
-      buildColsUI(); buildEditorTable(); renderTasks();
-    }
-
-    function resetColumns(){
-      if(!confirm('Reset to default columns?')) return;
-      columns = ['id','name','state','trainingType','durationDays','assignedResourceId'];
-      // ensure tasks have those columns
-      tasks = tasks.map((t,i)=>({
-        id: t.id || 'L'+(i+1),
-        name: t.name || '',
-        state: t.state || '',
-        trainingType: t.trainingType || '',
-        durationDays: t.durationDays || 1,
-        assignedResourceId: t.assignedResourceId || ''
-      }));
-      buildColsUI(); buildEditorTable(); renderTasks();
-    }
-
-    function buildEditorTable(single=false, rowIndex=0){
-      const head = document.getElementById('editorHead');
-      const body = document.getElementById('editorBody');
-      head.innerHTML = '';
-      body.innerHTML = '';
-
-      // headers
-      const thIdx = document.createElement('th'); thIdx.textContent='#'; head.appendChild(thIdx);
-      columns.forEach(c=> { const th = document.createElement('th'); th.textContent = c; head.appendChild(th); });
-      const thActions = document.createElement('th'); thActions.textContent='Actions'; head.appendChild(thActions);
-
-      // rows
-      const rows = single ? [tasks[rowIndex]] : tasks;
-      rows.forEach((r, ri) => {
-        const tr = document.createElement('tr');
-        const idxTd = document.createElement('td'); idxTd.textContent = (single ? rowIndex+1 : ri+1); tr.appendChild(idxTd);
-        columns.forEach(col => {
-          const td = document.createElement('td');
-          const val = r[col] !== undefined ? r[col] : '';
-          const input = document.createElement('input'); input.type='text'; input.value = val;
-          input.style.width='100%';
-          input.onchange = (e) => {
-            if(single) tasks[rowIndex][col] = e.target.value;
-            else tasks[ri][col] = e.target.value;
-            renderTasks();
-          };
-          td.appendChild(input);
-          tr.appendChild(td);
-        });
-        const actTd = document.createElement('td');
-        const del = document.createElement('button'); del.textContent='Delete'; del.className='row-btn';
-        del.onclick = () => {
-          const idxToDel = single ? rowIndex : ri;
-          if(!confirm('Delete row '+(idxToDel+1)+'?')) return;
-          tasks.splice(idxToDel,1);
-          buildEditorTable();
-          renderTasks();
-        };
-        actTd.appendChild(del);
-        tr.appendChild(actTd);
-        body.appendChild(tr);
-      });
-    }
-
-    function addEditorRow(){
-      const newRow = {};
-      columns.forEach(c=> newRow[c]='');
-      // set defaults for main expected columns if present
-      if(newRow.id==='') newRow.id = 'L'+(tasks.length+1);
-      if(newRow.durationDays==='') newRow.durationDays = 1;
-      tasks.push(newRow);
-      buildEditorTable();
-      renderTasks();
-    }
-
-    // Paste rows from clipboard (TSV or CSV)
-    function pasteEditor(){
-      navigator.clipboard.readText().then(text => {
-        if(!text) return alert('Clipboard empty');
-        const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-        for(const ln of lines){
-          // simple split: tab or comma
-          const cols = ln.split(/\t|,/);
-          const row = {};
-          for(let i=0;i<columns.length;i++) row[columns[i]] = cols[i] !== undefined ? cols[i] : '';
-          // fill sensible defaults
-          if(!row.id) row.id = 'L'+(tasks.length+1);
-          if(row.durationDays==='') row.durationDays = 1;
-          tasks.push(row);
-        }
-        buildEditorTable();
-        renderTasks();
-      }).catch(()=> alert('Paste not allowed — copy first or type rows manually.'));
-    }
-
-    // Download tasks CSV
-    function downloadTasksCSV(){
-      if(tasks.length===0) return alert('No tasks');
-      const header = columns.join(',');
-      const lines = tasks.map(t => columns.map(c => '"' + (t[c] !== undefined ? String(t[c]).replace(/"/g,'""') : '') + '"').join(','));
-      const csv = [header].concat(lines).join('\n');
-      const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'tasks.csv'; a.click(); URL.revokeObjectURL(url);
-    }
-
-    // Auto allocate (simple round-robin but using duration)
-    function autoAllocate(){
-      if(resources.length===0) return alert('No resources available. Add resources first.');
-      // naive greedy: assign by earliest "nextFree" - track nextFree as numeric days counter
-      const resState = resources.map((r,i)=> ({...r, nextFree:0}));
-      // sort tasks by trainingType desc and duration desc
-      const sortedIdx = tasks.map((t,i)=>i).sort((a,b)=>{
-        const ta = Number(tasks[a].trainingType||0), tb = Number(tasks[b].trainingType||0);
-        if(ta !== tb) return tb - ta;
-        return (Number(tasks[b].durationDays||0) - Number(tasks[a].durationDays||0));
-      });
-      for(const idx of sortedIdx){
-        // pick res with smallest nextFree
-        resState.sort((x,y)=> x.nextFree - y.nextFree);
-        const r = resState[0];
-        tasks[idx].assignedResourceId = r.id;
-        // set simple plannedStart/plannedEnd using pseudo-days as offsets (we'll not show dates here)
-        r.nextFree += Number(tasks[idx].durationDays || 1);
+    /**************************************************************************
+     * Allocation Page - contains two sub-tabs: Allocation & Resource Management
+     **************************************************************************/
+    function AllocationPage({ tasks, setTasks, resources, setResources, onBack }){
+      const [subTab, setSubTab] = useState('allocation'); // allocation | resources
+      // copy of tasks for editing allocations (mutate via setTasks)
+      function assignResource(taskId, resourceId){
+        setTasks(prev => prev.map(t => t.id === taskId ? {...t, assignedResource: resourceId} : t));
       }
-      renderTasks();
-      alert('Auto allocation complete (naive). Use editor to fine-tune assignments.');
+      function autoAllocate(){
+        if(resources.length === 0){ alert('No resources defined. Add resources first.'); return; }
+        // greedy by earliest nextFree (naive)
+        const resState = resources.map(r => ({ ...r, nextFree: 0 }));
+        // sort tasks: those with startDate first or trainingType preference
+        const indices = tasks.map((t,i)=>i).sort((a,b) => {
+          const A = tasks[a].startDate ? new Date(tasks[a].startDate).getTime() : 0;
+          const B = tasks[b].startDate ? new Date(tasks[b].startDate).getTime() : 0;
+          return A - B;
+        });
+        const newTasks = tasks.slice();
+        for(const idx of indices){
+          // find resource with min nextFree
+          resState.sort((x,y) => x.nextFree - y.nextFree);
+          const best = resState[0];
+          newTasks[idx] = {...newTasks[idx], assignedResource: best.id || ''};
+          // estimate duration in days
+          const dur = tasks[idx].startDate && tasks[idx].endDate ? daysBetween(tasks[idx].startDate, tasks[idx].endDate) : 1;
+          best.nextFree += dur;
+        }
+        setTasks(newTasks);
+        alert('Auto allocation (naive) completed.');
+      }
+
+      // Remove resource references on deletion
+      function removeResource(id){
+        if(!confirm('Delete resource '+id+'?')) return;
+        setResources(prev => prev.filter(r => r.id !== id));
+        // clear assignments pointing to removed resource
+        setTasks(prev => prev.map(t => t.assignedResource === id ? {...t, assignedResource: ''} : t));
+      }
+
+      return (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <button className="px-2 py-1 bg-gray-100 rounded mr-2" onClick={onBack}>← Back</button>
+              <span className="text-xl font-semibold">Resource Allocation</span>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={()=> setSubTab('allocation')} className={'px-3 py-2 rounded ' + (subTab==='allocation' ? 'bg-indigo-600 text-white' : 'bg-white border')}>Allocation</button>
+              <button onClick={()=> setSubTab('resources')} className={'px-3 py-2 rounded ' + (subTab==='resources' ? 'bg-indigo-600 text-white' : 'bg-white border')}>Resource Management</button>
+            </div>
+          </div>
+
+          {subTab === 'allocation' && (
+            <div className="grid grid-cols-12 gap-6">
+              <section className="col-span-8 card p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="font-semibold">Assign resources to tasks</div>
+                  <div className="flex gap-2">
+                    <button className="px-3 py-2 bg-gray-100 rounded" onClick={autoAllocate}>Auto Allocate</button>
+                    <button className="px-3 py-2 bg-green-600 text-white rounded" onClick={()=>{
+                      // export allocations
+                      const rows = tasks.map(t => ({ id: t.id, locationName: t.locationName, assignedResource: t.assignedResource || '' }));
+                      const csv = toCSV(rows, ['id','locationName','assignedResource']);
+                      downloadFile(csv, 'allocations.csv');
+                    }}>Export Allocations</button>
+                  </div>
+                </div>
+
+                <div className="table-scroll">
+                  <table className="min-w-full text-sm">
+                    <thead className="text-xs text-gray-500">
+                      <tr className="text-left">
+                        <th className="p-2">ID</th>
+                        <th className="p-2">Location</th>
+                        <th className="p-2">State Office</th>
+                        <th className="p-2">Start</th>
+                        <th className="p-2">End</th>
+                        <th className="p-2">Assigned</th>
+                        <th className="p-2">Days</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tasks.map(t => {
+                        const days = t.startDate && t.endDate ? daysBetween(t.startDate, t.endDate) : (t.actualStart && t.endDate ? daysBetween(t.actualStart, t.endDate) : 1);
+                        return (
+                          <tr key={t.id} className="border-t">
+                            <td className="p-2">{t.id}</td>
+                            <td className="p-2">{t.locationName}</td>
+                            <td className="p-2">{t.stateOffice}</td>
+                            <td className="p-2">{t.startDate}</td>
+                            <td className="p-2">{t.endDate}</td>
+                            <td className="p-2">
+                              <select value={t.assignedResource || ''} onChange={(e)=> assignResource(t.id, e.target.value)} className="p-1 border rounded">
+                                <option value=''>-- none --</option>
+                                {resources.map(r => <option key={r.id} value={r.id}>{r.id} — {r.name}</option>)}
+                              </select>
+                            </td>
+                            <td className="p-2">{days}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <aside className="col-span-4 card p-4">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold">Quick Summary</div>
+                  <div className="tiny text-gray-500">{tasks.filter(t=>t.assignedResource).length}/{tasks.length} assigned</div>
+                </div>
+                <div className="mt-4">
+                  <h4 className="tiny font-semibold">Resource snapshot</h4>
+                  <div className="mt-2 space-y-2">
+                    {resources.map(r => {
+                      const assignedDays = tasks.reduce((s,t)=> s + ((t.assignedResource===r.id) ? (t.startDate && t.endDate ? daysBetween(t.startDate,t.endDate) : 1) : 0), 0);
+                      return (
+                        <div key={r.id} className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium">{r.id} — {r.name}</div>
+                            <div className="tiny text-gray-500">{r.designation || ''} • {r.stateOffice || r.baseLocation || ''}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-semibold">{assignedDays}d</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </aside>
+            </div>
+          )}
+
+          {subTab === 'resources' && (
+            <ResourceManagement
+              resources={resources} setResources={setResources}
+              tasks={tasks} setTasks={setTasks} removeResource={removeResource}
+            />
+          )}
+        </div>
+      );
     }
 
-    function exportCSV(){
-      if(tasks.length===0) return alert('No tasks to export');
-      const header = columns.join(',');
-      const lines = tasks.map(t => columns.map(c => '"' + (t[c] !== undefined ? String(t[c]).replace(/"/g,'""') : '') + '"').join(','));
-      const csv = [header].concat(lines).join('\n');
-      const blob = new Blob([csv], {type:'text/csv'}); const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'allocations.csv'; a.click(); URL.revokeObjectURL(url);
-    }
+    /**************************************************************************
+     * Resource Management component: edit resources, show calendar & utilization
+     **************************************************************************/
+    function ResourceManagement({ resources, setResources, tasks, setTasks, removeResource }){
+      const [selected, setSelected] = useState(resources[0] ? resources[0].id : null);
+      const [monthOffset, setMonthOffset] = useState(0); // 0 = current month
+      useEffect(()=> { if(!selected && resources[0]) setSelected(resources[0].id); }, [resources]);
 
-    // Editor helpers for per-row edit (from task table)
-    function openEditorForRow(i){
-      openEditor(true, i);
-    }
+      function addResource(){
+        const id = uid('R');
+        const r = { id, name: 'New Resource', baseLocation:'', stateOffice:'', designation:'Field', capacityDaysPerWeek:6 };
+        setResources(prev => [r, ...prev]);
+        setSelected(id);
+      }
+      function updateResource(id, updates){
+        setResources(prev => prev.map(r => r.id === id ? {...r, ...updates} : r));
+      }
 
-    // Resources Editor
-    function openResourcesEditor(){
-      document.getElementById('resEditor').style.display='flex';
-      buildResourcesInner();
-    }
-    function closeResEditor(){
-      document.getElementById('resEditor').style.display='none';
-      renderResourceList();
-    }
-    function confirmAddResource(){
-      const name = document.getElementById('resNameInput').value.trim();
-      const role = document.getElementById('resRoleInput').value.trim() || 'Field';
-      if(!name) return alert('Enter name');
-      // generate new ID
-      let max = 0;
-      resources.forEach(r=>{
-        const m = Number(r.id.replace(/[^\d]/g,'')); if(!isNaN(m)) max = Math.max(max, m);
-      });
-      const id = 'R'+(max+1);
-      resources.push({id, name, role, capacityDaysPerWeek:6});
-      document.getElementById('resNameInput').value=''; document.getElementById('resRoleInput').value='';
-      buildResourcesInner(); renderResourceList();
-    }
-    function buildResourcesInner(){
-      const container = document.getElementById('resListInner');
-      container.innerHTML = '';
-      resources.forEach((r, idx) => {
-        const row = document.createElement('div'); row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center'; row.style.padding='6px 4px';
-        const left = document.createElement('div'); left.style.flex='1';
-        left.innerHTML = '<input class="res-edit-row" data-id="'+r.id+'" style="width:100%;padding:6px;border:1px solid #eef2f7;border-radius:6px" value="'+r.name+'" oninput="resEditName('+idx+', this.value)"><div class="muted" style="font-size:12px">ID: '+r.id+' • Role: <input value="'+r.role+'" style="width:90px" oninput="resEditRole('+idx+', this.value)"></div>';
-        const right = document.createElement('div');
-        const del = document.createElement('button'); del.textContent='Delete'; del.className='row-btn'; del.onclick = ()=>{ if(confirm('Delete '+r.id+'?')) { resources.splice(idx,1); buildResourcesInner(); renderResourceList(); renderTasks(); } };
-        right.appendChild(del);
-        row.appendChild(left); row.appendChild(right);
-        container.appendChild(row);
-      });
-    }
-    function resEditName(idx, val){ resources[idx].name = val; renderResourceList(); }
-    function resEditRole(idx, val){ resources[idx].role = val; renderResourceList(); }
+      // compute utilization by month for selected resource
+      const utilizationByMonth = useMemo(()=> {
+        if(!selected) return [];
+        // build 12 months starting from current month + monthOffset
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+        const months = [];
+        for(let m=0;m<6;m++){
+          const d = new Date(start.getFullYear(), start.getMonth()+m, 1);
+          months.push(d);
+        }
+        const res = resources.find(r=>r.id===selected);
+        const assignedTasks = tasks.filter(t => t.assignedResource === selected);
+        return months.map(mStart => {
+          const mEnd = new Date(mStart.getFullYear(), mStart.getMonth()+1, 0);
+          let days = 0;
+          for(const t of assignedTasks){
+            const s = parseDate(t.startDate) || parseDate(t.actualStart) || null;
+            const e = parseDate(t.endDate) || null;
+            if(!s || !e) continue;
+            const overlapStart = s > mStart ? s : mStart;
+            const overlapEnd = e < mEnd ? e : mEnd;
+            if(overlapStart <= overlapEnd){
+              days += daysBetween(overlapStart, overlapEnd);
+            }
+          }
+          return { month: mStart, days, capacity: (res?.capacityDaysPerWeek||6) * 4 }; // 4-week baseline
+        });
+      }, [selected, resources, tasks, monthOffset]);
 
-    // Utilization page
-    function renderUtil(){
-      const tbody = document.querySelector('#utilTable tbody');
-      tbody.innerHTML = '';
-      const map = {};
-      resources.forEach(r=> map[r.id]=0);
-      tasks.forEach(t=> { if(t.assignedResourceId) map[t.assignedResourceId] += Number(t.durationDays || 0); });
-      resources.forEach(r=> {
-        const tr = document.createElement('tr');
-        tr.innerHTML = '<td>'+r.id+' — '+r.name+'</td><td>'+(map[r.id]||0)+'</td>';
-        tbody.appendChild(tr);
-      });
-    }
+      // simple chart using Chart.js
+      const chartRef = useRef(null);
+      useEffect(()=> {
+        const ctx = chartRef.current && chartRef.current.getContext('2d');
+        if(!ctx || !selected) return;
+        // cleanup existing
+        if(window._resChart) window._resChart.destroy();
+        const labels = utilizationByMonth.map(u => u.month.toLocaleString('default',{month:'short', year:'numeric'}));
+        const data = utilizationByMonth.map(u => u.days);
+        window._resChart = new Chart(ctx, {
+          type:'bar',
+          data:{ labels, datasets: [{ label: 'Assigned days', data }] },
+          options:{ responsive:true, maintainAspectRatio:false }
+        });
+      }, [utilizationByMonth, selected]);
 
-    // Initialize
-    renderTasks();
+      return (
+        <div className="grid grid-cols-12 gap-6">
+          <aside className="col-span-4 card p-4">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold">Resources</div>
+              <button className="px-2 py-1 bg-blue-600 text-white rounded" onClick={addResource}>Add</button>
+            </div>
 
-    // Expose some functions to global for inline handlers where needed
-    window.show = show;
-    window.openEditor = openEditor;
-    window.closeEditor = closeEditor;
-    window.addEditorRow = addEditorRow;
-    window.pasteEditor = pasteEditor;
-    window.addColumn = addColumn;
-    window.removeColumn = removeColumn;
-    window.renameColumn = renameColumn;
-    window.resetColumns = resetColumns;
-    window.moveColumnLeft = moveColumnLeft;
-    window.moveColumnRight = moveColumnRight;
-    window.downloadTasksCSV = downloadTasksCSV;
-    window.openResourcesEditor = openResourcesEditor;
-    window.closeResEditor = closeResEditor;
-    window.confirmAddResource = confirmAddResource;
-    window.renderTasks = renderTasks;
-    window.addResource = addResource;
-    window.editResource = editResource;
-    window.removeResource = removeResource;
-    window.exportCSV = exportCSV;
-    window.autoAllocate = autoAllocate;
-    window.renderUtil = renderUtil;
-  </script>
-</body>
-</html>
+            <div className="mt-3 space-y-2">
+              {resources.map(r => (
+                <div key={r.id} className={'p-2 rounded border ' + (selected===r.id ? 'border-indigo-600 bg-indigo-50' : '')} onClick={()=>setSelected(r.id)} style={{cursor:'pointer'}}>
+                  <div className="font-semibold">{r.id} — {r.name}</div>
+                  <div className="tiny text-gray-500">{r.designation} • {r.stateOffice || r.baseLocation}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4">
+              <h4 className="font-medium tiny">Edit selected</h4>
+              {selected ? (
+                <ResourceEditor resource={resources.find(r=>r.id===selected)} onUpdate={u=>updateResource(selected,u)} onDelete={()=> removeResource(selected)} />
+              ) : <div className="tiny text-gray-500 mt-2">Select a resource to edit</div>}
+            </div>
+          </aside>
+
+          <section className="col-span-8 card p-4">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold">Resource utilization</div>
+              <div className="tiny text-gray-500">Month window: 6 months</div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-4 items-start">
